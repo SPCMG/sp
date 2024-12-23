@@ -1,0 +1,26 @@
+data:
+  data_root: "/path/to/data"          # Root directory for data
+  motion_dir: "/path/to/motion"       # Directory containing motion .npy files
+  text_dir: "/path/to/text"           # Directory containing text .txt files
+  min_motion_length: 24               # Minimum number of frames in motion data
+  max_motion_length: 196              # Maximum number of frames in motion data
+  n_joints: 24                        # Number of joints in the motion data
+  n_feats: 6                          # Number of features per joint (e.g., x, y, z, velocity_x, velocity_y, velocity_z)
+
+train:
+  batch_size: 8                       # Batch size for training
+  shuffle: true                       # Shuffle the training data
+  num_workers: 4                      # Number of subprocesses for data loading
+  learning_rate: 1e-4                 # Learning rate for optimizer
+  num_epochs: 10                      # Number of training epochs
+
+model:
+  latent_dim: 512                     # Dimension of the latent space
+  num_layers: 4                       # Number of transformer layers in motion encoder
+  num_heads: 4                        # Number of attention heads in motion encoder
+  dropout: 0.1                        # Dropout rate in motion encoder
+  clip_model_name: "ViT-B/32"         # CLIP model variant to use
+
+checkpoint:
+  save_path: "./checkpoints"          # Directory to save model checkpoints
+  save_every: 1                       # Save checkpoint every 'save_every' epochs

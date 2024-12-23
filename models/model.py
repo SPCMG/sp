@@ -1,106 +1,199 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+import torch.nn.functional as F
 import clip
 from models.architectures.transformer import Encoder_TRANSFORMER
 
-# -----------------------------
-# 1. LOAD CLIP TEXT ENCODER
-# -----------------------------
-device = "cuda" if torch.cuda.is_available() else "cpu"
-clip_model, clip_preprocess = clip.load("ViT-B/32", device=device, jit=False)
-clip.model.convert_weights(clip_model)  # ensures float16 precision if available
+#############################################
+# 1) CLIP Text Encoder (same as MotionCLIP) #
+#############################################
+class ClipTextEncoder(nn.Module):
+    """
+    Exactly uses CLIP's text encoder from the official OpenAI CLIP model
+    (as MotionCLIP does). We freeze the weights so we don't train them.
+    """
+    def __init__(self, clip_model_name="ViT-B/32", device="cuda"):
+        super().__init__()
+        self.device = device
+        # Load the full CLIP model, get rid of the image encoder if you want
+        # but typically we keep everything. We'll just not use the image encoder.
+        self.clip_model, _ = clip.load(clip_model_name, device=device)
+        
+        # Freeze all CLIP parameters
+        for param in self.clip_model.parameters():
+            param.requires_grad = False
 
-# Freeze CLIP weights if you do not want to train it
-clip_model.eval()
-for p in clip_model.parameters():
-    p.requires_grad = False
+    def forward(self, text_tokenized):
+        """
+        text_tokenized: Already tokenized text (shape [bs, token_length])
+        Returns: [bs, 512] text embedding
+        """
+        return self.clip_model.encode_text(text_tokenized).float()
 
-# -----------------------------
-# 2. INITIALIZE MOTION ENCODER
-# -----------------------------
-# Example parameters for Encoder_TRANSFORMER:
-params = {
-    'modeltype': 'motionclip',
-    'njoints': 22,        # adjust to your dataset
-    'nfeats': 3,          # adjust if each joint is (x,y,z)
-    'num_frames': 200,    # maximum number of frames per sequence
-    'num_classes': 1,     # not really used here, just dummy
-    'translation': True,
-    'pose_rep': 'rot6d',  # or 'xyz' depending on how your data is represented
-    'glob': True,
-    'glob_rot': True,
-    'latent_dim': 256,
-    'ff_size': 1024,
-    'num_layers': 4,
-    'num_heads': 4,
-    'dropout': 0.1,
-    'activation': 'gelu'
-}
 
-motion_encoder = Encoder_TRANSFORMER(**params).to(device)
+################################################
+# 2) Transformer-based Motion Encoder (MotionCLIP)
+#    from motionCLIP's Encoder_TRANSFORMER
+################################################
+class MotionTransformerEncoder(nn.Module):
+    """
+    Wraps around the Encoder_TRANSFORMER from the original MotionCLIP code.
+    We'll instantiate it with all the necessary hyperparams. 
+    """
+    def __init__(
+        self,
+        modeltype="transformer", 
+        njoints=24, 
+        nfeats=6, 
+        num_frames=60, 
+        num_classes=1,
+        translation=True, 
+        pose_rep="xyz", 
+        glob=True, 
+        glob_rot=True,
+        latent_dim=512,        # match CLIP's 512 dimension
+        ff_size=1024,
+        num_layers=4,
+        num_heads=4,
+        dropout=0.1,
+        activation="gelu",
+        ablation=None,
+    ):
+        super().__init__()
+        # Instantiate the actual MotionCLIP Encoder_TRANSFORMER
+        self.encoder = Encoder_TRANSFORMER(
+            modeltype=modeltype,
+            njoints=njoints,
+            nfeats=nfeats,
+            num_frames=num_frames,
+            num_classes=num_classes,
+            translation=translation,
+            pose_rep=pose_rep,
+            glob=glob,
+            glob_rot=glob_rot,
+            latent_dim=latent_dim,
+            ff_size=ff_size,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            dropout=dropout,
+            ablation=ablation,
+            activation=activation
+        )
+        self.latent_dim = latent_dim
 
-# -----------------------------
-# 3. PREPARE INPUT DATA
-# -----------------------------
-# Suppose you have:
-# - Motion batch of shape: (B, njoints, nfeats, nframes)
-# - Corresponding text: A list of captions
+    def forward(self, motion_batch):
+        """
+        motion_batch is expected to be a dict with at least:
+            {
+              "x": [bs, njoints, nfeats, nframes],
+              "y": [bs],            (or an int label)
+              "mask": [bs, nframes], 
+              ... 
+            }
+        We only need "mu" from the encoder (like MotionCLIP does).
+        """
+        # The encoder returns { "mu": <tensor>, ... }
+        out = self.encoder(motion_batch)
+        # We'll consider out["mu"] as our 512-dim motion embedding
+        return out["mu"]
 
-# Example dummy data:
-batch_size = 4
-njoints = params['njoints']
-nfeats = params['nfeats']
-nframes = params['num_frames']
 
-# Dummy motion: random tensor
-motion_data = torch.randn(batch_size, njoints, nfeats, nframes, device=device)
+###########################################
+# 3) Simple Contrastive Loss (CLIP-like)  #
+###########################################
+class ContrastiveLoss(nn.Module):
+    """
+    We can keep it simple: 
+      - Normalize embeddings
+      - CrossEntropy with diagonal as positives
+    """
+    def __init__(self, temperature=0.07):
+        super().__init__()
+        self.temperature = temperature
 
-# Dummy text: a list of strings
-captions = ["A person walking forward", "A person running in place", "A person jumping up", "A person turning around"]
+    def forward(self, motion_emb, text_emb):
+        # motion_emb: [bs, dim]
+        # text_emb:   [bs, dim]
+        motion_emb = F.normalize(motion_emb, dim=-1)
+        text_emb   = F.normalize(text_emb,   dim=-1)
 
-# For CLIP text encoding, we need to tokenize
-texts = clip.tokenize(captions).to(device)  # shape: (B, seq_len)
+        logits_per_motion = motion_emb @ text_emb.t() / self.temperature
+        logits_per_text   = logits_per_motion.t()
 
-# -----------------------------
-# 4. ENCODE TEXT INTO EMBEDDINGS
-# -----------------------------
-with torch.no_grad():
-    text_emb = clip_model.encode_text(texts).float()  # shape: (B, 512)
-    # Normalize if needed
-    text_emb = text_emb / text_emb.norm(dim=-1, keepdim=True)
-print("Text embedding shape:", text_emb.shape)  # (B, 512)
+        batch_size = motion_emb.shape[0]
+        ground_truth = torch.arange(batch_size, device=motion_emb.device)
 
-# -----------------------------
-# 5. ENCODE MOTION INTO EMBEDDINGS
-# -----------------------------
-# The motion encoder expects a dictionary with "x", "y", "mask".
-# "x": motion data (B, njoints, nfeats, nframes)
-# "y": class labels (we can set them to 0 if unused)
-# "mask": boolean mask indicating valid frames (B, nframes)
+        # standard cross-entropy losses
+        loss_motion = F.cross_entropy(logits_per_motion, ground_truth)
+        loss_text   = F.cross_entropy(logits_per_text,   ground_truth)
+        total_loss = (loss_motion + loss_text) / 2.0
+        return total_loss
 
-y = torch.zeros(batch_size, dtype=torch.long, device=device)
-lengths = torch.full((batch_size,), nframes, dtype=torch.long, device=device)  # all sequences full length
-mask = torch.arange(nframes, device=device)[None, :] < lengths[:, None]  # (B, nframes)
 
-batch_motion = {"x": motion_data, "y": y, "mask": mask}
+#########################################################
+# 4) Combined Model: MotionCLIP-style (Text + Motion)   #
+#########################################################
+class MotionClipModel(nn.Module):
+    def __init__(
+        self,
+        # Motion encoder options
+        njoints=24,
+        nfeats=6,
+        num_frames=60,
+        latent_dim=512,
+        # CLIP text encoder
+        clip_model_name="ViT-B/32",
+        device="cuda"
+    ):
+        super().__init__()
+        self.device = device
 
-with torch.no_grad():
-    motion_out = motion_encoder(batch_motion)
-    motion_emb = motion_out["mu"]  # shape: (B, latent_dim)
-    # Normalize if needed
-    motion_emb = motion_emb / motion_emb.norm(dim=-1, keepdim=True)
-print("Motion embedding shape:", motion_emb.shape)  # (B, 256)
+        # 4A) Motion Encoder (Transformer) 
+        self.motion_encoder = MotionTransformerEncoder(
+            njoints=njoints,
+            nfeats=nfeats,
+            num_frames=num_frames,
+            latent_dim=latent_dim
+        )
 
-# -----------------------------
-# 6. USE YOUR OWN LOSS
-# -----------------------------
-# Now you have motion_emb and text_emb.
-# For example, a simple cosine similarity loss:
-cosine_sim = nn.CosineSimilarity(dim=1)
-similarity = cosine_sim(motion_emb, text_emb)  # shape: (B,)
-# Suppose you want them to match closely, you can define a loss as:
-loss = (1 - similarity).mean()
-print("Loss:", loss.item())
+        # 4B) CLIP Text Encoder (frozen)
+        self.text_encoder = ClipTextEncoder(
+            clip_model_name=clip_model_name, 
+            device=device
+        )
 
-# This is just an example. You can define and incorporate your custom loss terms here.
+        # 4C) Contrastive Loss
+        self.contrastive_loss = ContrastiveLoss(temperature=0.07)
+
+    def forward(self, motion_batch, text_tokenized):
+        """
+        motion_batch: dictionary containing x, y, mask, etc. (see above)
+        text_tokenized: the result of clip.tokenize(...) 
+                        or something already on device
+        """
+        # Move to device if not already
+        # typical pattern: for k,v in motion_batch.items(): ...
+        motion_batch_on_device = {}
+        for k, v in motion_batch.items():
+            if torch.is_tensor(v):
+                motion_batch_on_device[k] = v.to(self.device)
+            else:
+                motion_batch_on_device[k] = v
+
+        # text is also a tensor typically
+        text_tokenized = text_tokenized.to(self.device)
+
+        # 4A) Motion Encoder forward => motion embedding
+        motion_emb = self.motion_encoder(motion_batch_on_device)  # shape [bs, latent_dim]
+
+        # 4B) Text Encoder forward => text embedding
+        text_emb = self.text_encoder(text_tokenized)              # shape [bs, 512]
+
+        # 4C) Contrastive Loss
+        loss = self.contrastive_loss(motion_emb, text_emb)
+
+        return {
+            "loss": loss,
+            "motion_emb": motion_emb,
+            "text_emb": text_emb
+        }
