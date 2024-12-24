@@ -89,7 +89,7 @@ def main():
     # ------------------------------------------------------------------
     # 1) Load YAML config
     # ------------------------------------------------------------------
-    cfg = load_config("config.yaml")  # Ensure the path is correct
+    cfg = load_config("configs/config.yaml")  # Ensure the path is correct
 
     # ------------------------------------------------------------------
     # 2) Instantiate the datasets using config fields
