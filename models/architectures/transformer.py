@@ -14,99 +14,106 @@ class PositionalEncoding(nn.Module):
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-np.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
-        
+        pe = pe.unsqueeze(1)  # [max_len, 1, d_model]
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        # not used in the final model
-        x = x + self.pe[:x.shape[0], :]
+        """
+        Args:
+            x: [max_len, batch_size, d_model]
+        Returns:
+            x: [max_len, batch_size, d_model] + positional encoding
+        """
+        x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
 
 
-# only for ablation / not used in the final model
+# Only for ablation / not used in the final model
 class TimeEncoding(nn.Module):
     def __init__(self, d_model, dropout=0.1, max_len=5000):
         super(TimeEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x, mask, lengths):
-        time = mask * 1/(lengths[..., None]-1)
+        time = mask * 1 / (lengths[..., None] - 1)
         time = time[:, None] * torch.arange(time.shape[1], device=x.device)[None, :]
         time = time[:, 0].T
-        # add the time encoding
+        # Add the time encoding
         x = x + time[..., None]
         return self.dropout(x)
-    
+
 
 class Encoder_TRANSFORMER(nn.Module):
-    def __init__(self, modeltype, njoints, nfeats, num_frames, num_classes, translation, pose_rep, glob, glob_rot,
-                 latent_dim=256, ff_size=1024, num_layers=4, num_heads=4, dropout=0.1,
-                 ablation=None, activation="gelu", **kargs):
+    def __init__(self, modeltype, n_features, num_frames,
+                 latent_dim=256, ff_size=1024, num_layers=4, num_heads=4,
+                 dropout=0.1, activation="gelu", **kwargs):
         super().__init__()
-        
+
         self.modeltype = modeltype
-        self.njoints = njoints
-        self.nfeats = nfeats
+        self.n_features = n_features  # Now directly using n_features=263
         self.num_frames = num_frames
-        self.num_classes = num_classes
-        
-        self.pose_rep = pose_rep
-        self.glob = glob
-        self.glob_rot = glob_rot
-        self.translation = translation
-        
         self.latent_dim = latent_dim
-        
+
         self.ff_size = ff_size
         self.num_layers = num_layers
         self.num_heads = num_heads
         self.dropout = dropout
 
-        self.ablation = ablation
         self.activation = activation
-        
-        self.input_feats = self.njoints*self.nfeats
 
-        self.muQuery = nn.Parameter(torch.randn(1, self.latent_dim))
-        self.sigmaQuery = nn.Parameter(torch.randn(1, self.latent_dim))
-        self.skelEmbedding = nn.Linear(self.input_feats, self.latent_dim)
+        # Input projection layer: maps from n_features to latent_dim
+        self.input_projection = nn.Linear(self.n_features, self.latent_dim)
 
+        # Positional Encoding
         self.sequence_pos_encoder = PositionalEncoding(self.latent_dim, self.dropout)
 
-        seqTransEncoderLayer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
-                                                          nhead=self.num_heads,
-                                                          dim_feedforward=self.ff_size,
-                                                          dropout=self.dropout,
-                                                          activation=self.activation)
-        self.seqTransEncoder = nn.TransformerEncoder(seqTransEncoderLayer,
-                                                     num_layers=self.num_layers)
+        # Transformer Encoder
+        encoder_layer = nn.TransformerEncoderLayer(d_model=self.latent_dim,
+                                                   nhead=self.num_heads,
+                                                   dim_feedforward=self.ff_size,
+                                                   dropout=self.dropout,
+                                                   activation=self.activation)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer,
+                                                         num_layers=self.num_layers)
 
     def forward(self, batch):
-        x, y, mask = batch["x"], batch["y"], batch["mask"]
-        bs, njoints, nfeats, nframes = x.shape
-        x = x.permute((3, 0, 1, 2)).reshape(nframes, bs, njoints * nfeats)
+        """
+        Args:
+            batch: dict containing:
+                - "x": [bs, max_len, 263] (Tensor)
+                - "mask": [bs, max_len] (bool Tensor)
+        Returns:
+            motion_emb: [bs, latent_dim]
+        """
+        x, mask = batch["x"], batch["mask"]  # x: [bs, max_len, 263], mask: [bs, max_len]
 
-        # embedding of the skeleton
-        x = self.skelEmbedding(x)
+        bs, max_len, D = x.shape
+        assert D == self.n_features, f"Expected feature dimension {self.n_features}, got {D}"
 
-        # Blank Y to 0's , no classes in our model, only learned token
-        y = y - y
-        xseq = torch.cat((self.muQuery[y][None], self.sigmaQuery[y][None], x), axis=0)
+        # Project input features to latent_dim
+        x = self.input_projection(x)  # [bs, max_len, latent_dim]
 
-        # add positional encoding
-        xseq = self.sequence_pos_encoder(xseq)
+        # Permute for Transformer: [max_len, bs, latent_dim]
+        x = x.permute(1, 0, 2)
 
-        # create a bigger mask, to allow attend to mu and sigma
-        muandsigmaMask = torch.ones((bs, 2), dtype=bool, device=x.device)
+        # Apply positional encoding
+        x = self.sequence_pos_encoder(x)  # [max_len, bs, latent_dim]
 
-        maskseq = torch.cat((muandsigmaMask, mask), axis=1)
+        # Create src_key_padding_mask for Transformer (True for padding)
+        src_key_padding_mask = ~mask  # [bs, max_len]
 
-        final = self.seqTransEncoder(xseq, src_key_padding_mask=~maskseq)
-        mu = final[0]
-        logvar = final[1]
+        # Pass through Transformer Encoder
+        transformer_output = self.transformer_encoder(x, src_key_padding_mask=src_key_padding_mask)
+        # [max_len, bs, latent_dim]
 
-        return {"mu": mu}
+        # Permute back to [bs, latent_dim, max_len]
+        transformer_output = transformer_output.permute(1, 2, 0)  # [bs, latent_dim, max_len]
+
+        # Pooling to get [bs, latent_dim]
+        # Here, we use mean pooling over the temporal dimension
+        motion_emb = transformer_output.mean(dim=2)  # [bs, latent_dim]
+
+        return motion_emb
 
 
 class Decoder_TRANSFORMER(nn.Module):

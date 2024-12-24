@@ -8,7 +8,7 @@ class HumanML3D(Dataset):
     def __init__(self, opt, split="train"):
         """
         Args:
-            opt: namespace or dict with fields such as:
+            opt: OmegaConf DictConfig with fields such as:
                 - data_root
                 - motion_dir
                 - text_dir
@@ -21,24 +21,22 @@ class HumanML3D(Dataset):
         self.opt = opt
         self.split = split
 
-        # e.g., for normalization
+        # Load normalization parameters
         self.mean = np.load(pjoin(opt.data_root, "Mean.npy"))
         self.std = np.load(pjoin(opt.data_root, "Std.npy"))
 
         self.min_motion_length = opt.min_motion_length
         self.max_motion_length = opt.max_motion_length
 
-        # Suppose your motion is shaped [T, D], 
-        # and you eventually want to reshape it to [n_joints, n_feats, T]
-        self.n_joints = opt.n_joints  # e.g., 24
-        self.n_feats = opt.n_feats    # e.g., 6 (xyz + xyz velocity?), or 3, etc.
+        self.n_joints = opt.n_joints  # e.g., 22
+        self.n_feats = opt.n_feats    # e.g., 263 (raw features)
 
-        # For loading data
+        # Load data file list
         split_file = pjoin(opt.data_root, f"{split}.txt")
         with open(split_file, "r") as f:
             self.data_files = [line.strip() for line in f.readlines()]
 
-        # Preload data
+        # Preload data into memory
         self.data_dict = self._load_data()
 
     def _load_data(self):
@@ -47,14 +45,12 @@ class HumanML3D(Dataset):
             motion_path = pjoin(self.opt.motion_dir, f"{name}.npy")
             text_path = pjoin(self.opt.text_dir, f"{name}.txt")
             try:
-                motion = np.load(motion_path)  # shape [T, D]
+                motion = np.load(motion_path)  # shape [T, 263]
                 # Filter out invalid motion lengths
                 if len(motion) < self.min_motion_length or len(motion) > self.max_motion_length:
                     continue
 
-                # We assume each .txt file has multiple lines, each with a caption
-                # You said your file might have lines like "some caption # token1 token2 ..."
-                # For CLIP, we only really need the raw caption text.
+                # Load captions
                 with open(text_path, "r") as ftxt:
                     text_data = []
                     for line in ftxt:
@@ -70,8 +66,8 @@ class HumanML3D(Dataset):
                     continue
 
                 data_dict[name] = {
-                    "motion": motion,    # shape [T, D]
-                    "captions": text_data
+                    "motion": motion,          # shape [T, 263]
+                    "captions": text_data      # list of raw text strings
                 }
             except FileNotFoundError:
                 continue
@@ -82,79 +78,69 @@ class HumanML3D(Dataset):
         return len(self.data_dict)
 
     def __getitem__(self, idx):
-        # Pick an item
+        # Retrieve data sample
         key = list(self.data_dict.keys())[idx]
         item = self.data_dict[key]
 
-        motion_raw = item["motion"]   # shape [T, D]
+        # motion_raw: [T, D], D = 263
+        # T: The number of frames in the motion sequence. Each frame represents a snapshot of the motion at a given point in time.
+        # D: The total number of features for each frame, encompassing 4 root features, 21 * 9 = 189 joint positions/rotations, 22 * 3 = 66 local velocities, and 4 foot contacts
+        motion_raw = item["motion"]   
         captions = item["captions"]   # list of raw text strings
         caption = random.choice(captions)
 
-        # Normalize motion
-        motion_raw = (motion_raw - self.mean) / self.std  # shape [T, D]
+        # Normalize motion data
+        motion_raw = (motion_raw - self.mean) / self.std  # shape [T, 263]
 
-        # Pad / slice motion
+        # Pad or truncate motion data
         motion, mask, length = self._pad_or_truncate_motion(motion_raw)
 
-        # Return dictionary that matches MotionCLIP usage:
-        #  - x         : [n_joints, n_feats, max_motion_length] (torch will handle shape)
-        #  - mask      : [max_motion_length] boolean
-        #  - lengths   : integer
-        #  - clip_text : the raw caption string
+        # Construct sample dictionary
         sample = {
-            "x": motion,         # np array
-            "mask": mask,        # np boolean array
-            "lengths": length,   # int
-            "clip_text": caption
+            "x": motion,          # np array [max_len, 263]
+            "mask": mask,         # np boolean array [max_len]
+            "lengths": length,    # int
+            "clip_text": caption  # string
         }
         return sample
 
     def _pad_or_truncate_motion(self, motion_raw):
         """
-        motion_raw: [T, D]
-        We'll:
-         1) clip T to self.max_motion_length if T is too long
-         2) zero-pad if T is too short
-         3) reshape to [n_joints, n_feats, T_final]
-         4) build a boolean mask of shape [T_final]
+        Args:
+            motion_raw: [T, 263]
+        Returns:
+            motion_padded: [max_motion_length, 263]
+            mask: [max_motion_length] boolean array
+            length: int
         """
         T = motion_raw.shape[0]
         D = motion_raw.shape[1]
         max_len = self.max_motion_length
 
-        # If T > max_len, truncate
+        # Truncate if necessary
         if T > max_len:
             motion_raw = motion_raw[:max_len]
             T = max_len
 
-        # Zero-padding if T < max_len
+        # Pad if necessary
         if T < max_len:
             pad = np.zeros((max_len - T, D), dtype=motion_raw.dtype)
-            motion_padded = np.concatenate([motion_raw, pad], axis=0)  # shape [max_len, D]
+            motion_padded = np.concatenate([motion_raw, pad], axis=0)  # shape [max_len, 263]
         else:
-            motion_padded = motion_raw  # shape [max_len, D]
+            motion_padded = motion_raw  # shape [max_len, 263]
 
-        # Now, mask shape = [max_len], True for real frames, False for padded
+        # Create mask
         mask = np.zeros((max_len,), dtype=bool)
         mask[:T] = True
 
-        # Reshape from [max_len, D] to [n_joints, n_feats, max_len]
-        # You must ensure that D == n_joints*n_feats
-        assert D == self.n_joints * self.n_feats, (
-            f"Dimension mismatch: D={D}, but n_joints*n_feats={self.n_joints*self.n_feats}."
-        )
-        motion_padded = motion_padded.reshape(max_len, self.n_joints, self.n_feats)
-        motion_padded = motion_padded.transpose(1, 2, 0)  # => [n_joints, n_feats, max_len]
-
         return motion_padded, mask, T
 
-
-################################
-# Default collate_fn (optional)
-################################
+# Default collate_fn
 from torch.utils.data._utils.collate import default_collate
 
 def collate_fn(batch):
-    # batch is a list of samples (each is a dict)
-    # default_collate will convert all numpy arrays to torch tensors automatically
+    """
+    Custom collate function to handle list of dicts.
+    Converts numpy arrays to torch tensors automatically.
+    """
     return default_collate(batch)

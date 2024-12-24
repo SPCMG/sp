@@ -5,9 +5,10 @@ from torch import optim
 import clip
 from omegaconf import OmegaConf
 
-from config import load_config
+from configs.config import load_config
 from data.dataset import HumanML3D, collate_fn
 from models.model import MotionClipModel
+
 
 def train_one_epoch(model, dataloader, optimizer, device="cuda"):
     model.train()
@@ -17,24 +18,25 @@ def train_one_epoch(model, dataloader, optimizer, device="cuda"):
         optimizer.zero_grad()
 
         # Move motion data to device
-        x       = batch["x"].to(device)       # [bs, n_joints, n_feats, nframes]
-        mask    = batch["mask"].to(device)    # [bs, nframes]
-        lengths = batch["lengths"].to(device) # [bs]
+        x = batch["x"].to(device)          # [bs, max_len, 263]
+        mask = batch["mask"].to(device)    # [bs, max_len]
+        lengths = batch["lengths"].to(device)  # [bs]
 
         # Tokenize text using CLIP
-        text_list = batch["clip_text"]          # list of strings
-        text_tokenized = clip.tokenize(text_list).to(device)  # shape [bs, token_length]
+        text_list = batch["clip_text"]      # list of strings
+        text_tokenized = clip.tokenize(text_list).to(device)  # [bs, token_length]
 
         # Construct the dict for motion data 
         motion_batch = {
-            "x": x,
-            "mask": mask,
-            "lengths": lengths,
-            "y": torch.zeros_like(lengths)      # Example: all zeros (modify as needed)
+            "x": x,          # [bs, max_len, 263]
+            "mask": mask,    # [bs, max_len]
+            "lengths": lengths,  # [bs]
+            # "y" is a dummy tensor; adjust if needed
+            "y": torch.zeros_like(lengths)
         }
 
         # Forward pass
-        outputs = model(motion_batch, text_tokenized)  # returns {"loss", "motion_emb", "text_emb", ...}
+        outputs = model(motion_batch, text_tokenized)  # {"loss", "motion_emb", "text_emb"}
         loss = outputs["loss"]
 
         # Backward + step
@@ -43,7 +45,8 @@ def train_one_epoch(model, dataloader, optimizer, device="cuda"):
 
         total_loss += loss.item()
 
-    return total_loss / len(dataloader)
+    average_loss = total_loss / len(dataloader)
+    return average_loss
 
 
 def validate_one_epoch(model, dataloader, device="cuda"):
@@ -52,26 +55,32 @@ def validate_one_epoch(model, dataloader, device="cuda"):
 
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
-            x       = batch["x"].to(device)
-            mask    = batch["mask"].to(device)
-            lengths = batch["lengths"].to(device)
+            # Move motion data to device
+            x = batch["x"].to(device)          # [bs, max_len, 263]
+            mask = batch["mask"].to(device)    # [bs, max_len]
+            lengths = batch["lengths"].to(device)  # [bs]
 
-            # Tokenize text
-            text_list = batch["clip_text"]
-            text_tokenized = clip.tokenize(text_list).to(device)
+            # Tokenize text using CLIP
+            text_list = batch["clip_text"]      # list of strings
+            text_tokenized = clip.tokenize(text_list).to(device)  # [bs, token_length]
 
+            # Construct the dict for motion data 
             motion_batch = {
-                "x": x,
-                "mask": mask,
-                "lengths": lengths,
-                "y": torch.zeros_like(lengths)  # Example: all zeros (modify as needed)
+                "x": x,          # [bs, max_len, 263]
+                "mask": mask,    # [bs, max_len]
+                "lengths": lengths,  # [bs]
+                # "y" is a dummy tensor; adjust if needed
+                "y": torch.zeros_like(lengths)
             }
 
-            outputs = model(motion_batch, text_tokenized)
+            # Forward pass
+            outputs = model(motion_batch, text_tokenized)  # {"loss", "motion_emb", "text_emb"}
             loss = outputs["loss"]
+
             total_loss += loss.item()
 
-    return total_loss / len(dataloader)
+    average_loss = total_loss / len(dataloader)
+    return average_loss
 
 
 def main():
@@ -80,7 +89,7 @@ def main():
     # ------------------------------------------------------------------
     # 1) Load YAML config
     # ------------------------------------------------------------------
-    cfg = load_config("config.yaml")  # Ensure the path to your config.yaml is correct
+    cfg = load_config("config.yaml")  # Ensure the path is correct
 
     # ------------------------------------------------------------------
     # 2) Instantiate the datasets using config fields
@@ -134,11 +143,16 @@ def main():
     optimizer = optim.Adam(model.motion_encoder.parameters(), lr=cfg.train.learning_rate)
 
     # ------------------------------------------------------------------
-    # 6) Training Loop
+    # 6) Setup Checkpoint Directory
+    # ------------------------------------------------------------------
+    checkpoint_dir = cfg.checkpoint.save_path
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # 7) Training Loop
     # ------------------------------------------------------------------
     num_epochs = cfg.train.num_epochs
     save_every = cfg.checkpoint.save_every
-    save_path = cfg.checkpoint.save_path
 
     for epoch in range(1, num_epochs + 1):
         print(f"Epoch {epoch}/{num_epochs}")
@@ -153,8 +167,6 @@ def main():
 
         # Save checkpoint every 'save_every' epochs
         if epoch % save_every == 0 or epoch == num_epochs:
-            checkpoint_dir = save_path
-            os.makedirs(checkpoint_dir, exist_ok=True)
             checkpoint_path = os.path.join(checkpoint_dir, f"motionclipmodel_epoch_{epoch}.pth")
             torch.save({
                 "epoch": epoch,
