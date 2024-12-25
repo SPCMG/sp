@@ -86,38 +86,197 @@ class MotionTransformerEncoder(nn.Module):
 ###########################################
 # 3) Simple Contrastive Loss (CLIP-like)  #
 ###########################################
-class ContrastiveLoss(nn.Module):
-    """
-    CLIP-like contrastive loss to align motion and text embeddings.
-    """
+# class ContrastiveLoss(nn.Module):
+#     def __init__(self, temperature=0.07):
+#         super().__init__()
+#         self.temperature = temperature
+
+#     def forward(self, motion_emb, text_emb):
+#         # Debug original embeddings
+#         print("\nContrastive Loss Debug:")
+#         print(f"Original motion_emb - shape: {motion_emb.shape}")
+#         print(f"min: {motion_emb.min().item():.4f}, max: {motion_emb.max().item()}, mean: {motion_emb.mean().item():.4f}")
+#         print(f"Original text_emb - shape: {text_emb.shape}")
+#         print(f"min: {text_emb.min().item():.4f}, max: {text_emb.max().item()}, mean: {text_emb.mean().item():.4f}")
+
+#         # Normalize embeddings
+#         motion_emb = F.normalize(motion_emb, dim=-1)
+#         text_emb = F.normalize(text_emb, dim=-1)
+
+#         # Debug normalized embeddings
+#         print("\nAfter normalization:")
+#         print(f"Motion embedding norms: {motion_emb.norm(dim=-1)}")
+#         print(f"Text embedding norms: {text_emb.norm(dim=-1)}")
+
+#         # Compute similarity matrices
+#         logits_per_motion = torch.matmul(motion_emb, text_emb.t()) / self.temperature
+#         logits_per_text = logits_per_motion.t()
+
+#         # Debug logits
+#         print("\nLogits debug:")
+#         print(f"Logits shape: {logits_per_motion.shape}")
+#         print(f"Logits values - min: {logits_per_motion.min().item():.4f}, max: {logits_per_motion.max().item()}")
+#         print(f"Temperature: {self.temperature}")
+
+#         # Ground truth labels
+#         batch_size = motion_emb.size(0)
+#         ground_truth = torch.arange(batch_size, device=motion_emb.device)
+        
+#         print(f"\nGround truth labels: {ground_truth}")
+#         print(f"Logits per motion:\n{logits_per_motion}")
+#         print(f"Logits per text:\n{logits_per_text}")
+
+#         # Compute cross-entropy losses
+#         loss_motion = F.cross_entropy(logits_per_motion, ground_truth)
+#         loss_text = F.cross_entropy(logits_per_text, ground_truth)
+#         total_loss = (loss_motion + loss_text) / 2.0
+
+#         print(f"\nLosses:")
+#         print(f"Motion loss: {loss_motion.item():.4f}")
+#         print(f"Text loss: {loss_text.item():.4f}")
+#         print(f"Total loss: {total_loss.item():.4f}")
+
+#         return total_loss
+    
+# class ContrastiveLoss(nn.Module):
+#     """
+#     CLIP-like contrastive loss to align motion and text embeddings.
+#     """
+#     def __init__(self, temperature=0.07):
+#         super().__init__()
+#         self.temperature = temperature
+
+#     def forward(self, motion_emb, text_emb):
+#         # Normalize embeddings
+#         motion_emb = F.normalize(motion_emb, dim=-1)  # [bs, latent_dim]
+#         text_emb = F.normalize(text_emb, dim=-1)      # [bs, 512]
+
+#         # Ensure dimensions match
+#         if motion_emb.size(-1) != text_emb.size(-1):
+#             raise ValueError(f"Embedding dimensions must match. Got motion_emb: {motion_emb.size(-1)}, text_emb: {text_emb.size(-1)}")
+
+#         # Compute similarity matrices
+#         logits_per_motion = torch.matmul(motion_emb, text_emb.t()) / self.temperature  # [bs, bs]
+#         logits_per_text = logits_per_motion.t()                                        # [bs, bs]
+
+#         # Ground truth labels
+#         batch_size = motion_emb.size(0)
+#         ground_truth = torch.arange(batch_size, device=motion_emb.device)
+
+#         # Compute cross-entropy losses
+#         loss_motion = F.cross_entropy(logits_per_motion, ground_truth)
+#         loss_text = F.cross_entropy(logits_per_text, ground_truth)
+#         total_loss = (loss_motion + loss_text) / 2.0
+
+#         return total_loss
+
+# class MultiCaption_ContrastiveLoss(nn.Module):
+#     def __init__(self, temperature=0.07):
+#         super().__init__()
+#         self.temperature = temperature
+
+#     def forward(self, motion_embs, text_embs_list, motion_ids):
+#         """
+#         Args:
+#             motion_embs: [batch_size, latent_dim] - motion embeddings
+#             text_embs_list: list of [num_captions_i, latent_dim] - text embeddings for each motion
+#             motion_ids: [batch_size] - unique ID for each motion to identify clusters
+#         """
+#         batch_size = motion_embs.shape[0]
+#         device = motion_embs.device
+        
+#         # Normalize all embeddings
+#         motion_embs = F.normalize(motion_embs, dim=-1)  # [batch_size, latent_dim]
+        
+#         # Prepare storage for all embeddings and their cluster IDs
+#         all_embeddings = [motion_embs]  # Start with motion embeddings
+#         all_cluster_ids = [motion_ids]  # Motion cluster IDs
+        
+#         # Add text embeddings
+#         for bid, text_embs in enumerate(text_embs_list):
+#             text_embs = F.normalize(text_embs, dim=-1)  # [num_captions_i, latent_dim]
+#             all_embeddings.append(text_embs)
+#             # Repeat motion_id for each caption
+#             all_cluster_ids.append(torch.full((text_embs.shape[0],), motion_ids[bid], device=device))
+        
+#         # Concatenate all embeddings and cluster IDs
+#         all_embeddings = torch.cat(all_embeddings, dim=0)  # [total_items, latent_dim]
+#         all_cluster_ids = torch.cat(all_cluster_ids, dim=0)  # [total_items]
+        
+#         # Compute similarity matrix
+#         similarity = torch.matmul(all_embeddings, all_embeddings.t()) / self.temperature
+        
+#         # Create cluster-based labels
+#         # Items with same cluster_id should be similar, different cluster_ids should be dissimilar
+#         labels = (all_cluster_ids.unsqueeze(0) == all_cluster_ids.unsqueeze(1)).float()
+        
+#         # Remove self-similarity from labels
+#         labels = labels * (1 - torch.eye(labels.shape[0], device=device))
+        
+#         # Compute loss
+#         similarity = similarity.masked_fill(torch.eye(similarity.shape[0], device=device).bool(), -float('inf'))
+        
+#         # Convert to log probabilities
+#         log_probs = F.log_softmax(similarity, dim=-1)
+        
+#         # Compute loss (negative log likelihood of positive pairs)
+#         loss = -(log_probs * labels).sum(dim=-1).mean()
+        
+#         return loss
+
+class MultiCaption_ContrastiveLoss(nn.Module):
     def __init__(self, temperature=0.07):
         super().__init__()
         self.temperature = temperature
 
-    def forward(self, motion_emb, text_emb):
-        # Normalize embeddings
-        motion_emb = F.normalize(motion_emb, dim=-1)  # [bs, latent_dim]
-        text_emb = F.normalize(text_emb, dim=-1)      # [bs, 512]
-
-        # Ensure dimensions match
-        if motion_emb.size(-1) != text_emb.size(-1):
-            raise ValueError(f"Embedding dimensions must match. Got motion_emb: {motion_emb.size(-1)}, text_emb: {text_emb.size(-1)}")
-
-        # Compute similarity matrices
-        logits_per_motion = torch.matmul(motion_emb, text_emb.t()) / self.temperature  # [bs, bs]
-        logits_per_text = logits_per_motion.t()                                        # [bs, bs]
-
-        # Ground truth labels
-        batch_size = motion_emb.size(0)
-        ground_truth = torch.arange(batch_size, device=motion_emb.device)
-
-        # Compute cross-entropy losses
-        loss_motion = F.cross_entropy(logits_per_motion, ground_truth)
-        loss_text = F.cross_entropy(logits_per_text, ground_truth)
-        total_loss = (loss_motion + loss_text) / 2.0
-
-        return total_loss
-
+    def forward(self, motion_embs, text_embs_list, motion_ids):
+        device = motion_embs.device
+        
+        # 1. Normalize embeddings (add small epsilon for numerical stability)
+        motion_embs = F.normalize(motion_embs + 1e-8, dim=-1)
+        
+        all_embeddings = [motion_embs]
+        all_cluster_ids = [motion_ids]
+        
+        # 2. Process text embeddings
+        for bid, text_embs in enumerate(text_embs_list):
+            # Add small epsilon and normalize
+            text_embs = F.normalize(text_embs + 1e-8, dim=-1)
+            all_embeddings.append(text_embs)
+            all_cluster_ids.append(torch.full((text_embs.shape[0],), motion_ids[bid], device=device))
+        
+        # 3. Concatenate all embeddings and cluster IDs
+        all_embeddings = torch.cat(all_embeddings, dim=0)  # [total_items, latent_dim]
+        all_cluster_ids = torch.cat(all_cluster_ids, dim=0)  # [total_items]
+        
+        # 4. Compute similarity with gradient clipping
+        similarity = torch.clamp(
+            torch.matmul(all_embeddings, all_embeddings.t()) / self.temperature,
+            min=-100,
+            max=100
+        )
+        
+        # 5. Create cluster-based labels with handling for empty clusters
+        labels = (all_cluster_ids.unsqueeze(0) == all_cluster_ids.unsqueeze(1)).float()
+        
+        # 6. Remove self-similarity and create mask for valid pairs
+        mask = (1 - torch.eye(labels.shape[0], device=device))
+        labels = labels * mask
+        
+        # Add small epsilon to avoid log(0)
+        similarity = similarity.masked_fill(torch.eye(similarity.shape[0], device=device).bool(), -1e9)
+        
+        # 7. Compute loss with numerical stability
+        log_probs = F.log_softmax(similarity, dim=-1)
+        
+        # 8. Compute loss only for valid pairs
+        valid_pairs = (labels.sum(dim=1) > 0)
+        if valid_pairs.sum() == 0:
+            return torch.tensor(0.0, device=device, requires_grad=True)
+            
+        loss = -(log_probs * labels)[valid_pairs].sum(dim=-1).mean()
+        
+        return loss
 
 #########################################################
 # 4) Combined MotionClipModel (Motion + Text)         #
@@ -160,43 +319,72 @@ class MotionClipModel(nn.Module):
             device=device
         )
 
-        # 3. Contrastive Loss
-        self.contrastive_loss = ContrastiveLoss(temperature=0.07)
+        # 3. Multi-caption Loss
+        self.multicap_loss = MultiCaption_ContrastiveLoss(temperature=0.07)
 
-    def forward(self, motion_batch, text_tokenized):
-        """
-        Args:
-            motion_batch: dictionary containing:
-                - "x": [bs, max_len, 263] (Tensor)
-                - "mask": [bs, max_len] (bool Tensor)
-                - "lengths": [bs] (int Tensor)
-                - "y": [bs] (Tensor) - not used in contrastive loss
-            text_tokenized: [bs, token_length] (Tensor)
-        Returns:
-            dict containing:
-                - "loss": scalar loss
-                - "motion_emb": [bs, latent_dim]
-                - "text_emb": [bs, 512]
-        """
-        # Ensure motion_batch is on the correct device
+    def encode_motion(self, motion_batch):
+        # Move everything to device
         for k, v in motion_batch.items():
-            if isinstance(v, torch.Tensor):
+            if torch.is_tensor(v):
                 motion_batch[k] = v.to(self.device)
+        return self.motion_encoder(motion_batch)  # shape [bs, latent_dim]
 
-        # Tokenize text is already done outside and passed as 'text_tokenized'
-        text_tokenized = text_tokenized.to(self.device)
+    def encode_texts_for_one_item(self, captions):
+        """
+        captions: list of raw caption strings
+        Return: a single Tensor [num_captions, latent_dim]
+        """
+        text_emb_list = []
+        for cap in captions:
+            tokens = clip.tokenize([cap]).to(self.device)  # shape [1, token_len]
+            emb = self.text_encoder(tokens)                # shape [1, 512]
+            text_emb_list.append(emb)
+        if len(text_emb_list) == 0:
+            # if no captions, return an empty tensor
+            return torch.empty(0, 512, device=self.device)
+        return torch.cat(text_emb_list, dim=0)  # [num_captions, 512]
 
-        # 1. Motion Encoder forward => motion embedding
-        motion_emb = self.motion_encoder(motion_batch)  # [bs, latent_dim]
+    def compute_multicap_loss(self, motion_embs, text_embs_list, motion_ids):
+        """
+        Wrap your MultiCaption_ContrastiveLoss
+        """
+        return self.multicap_loss(motion_embs, text_embs_list, motion_ids)
 
-        # 2. Text Encoder forward => text embedding
-        text_emb = self.text_encoder(text_tokenized)      # [bs, 512]
 
-        # 3. Contrastive Loss
-        loss = self.contrastive_loss(motion_emb, text_emb)
+    # def forward(self, motion_batch, text_tokenized):
+    #     """
+    #     Args:
+    #         motion_batch: dictionary containing:
+    #             - "x": [bs, max_len, 263] (Tensor)
+    #             - "mask": [bs, max_len] (bool Tensor)
+    #             - "lengths": [bs] (int Tensor)
+    #             - "y": [bs] (Tensor) - not used in contrastive loss
+    #         text_tokenized: [bs, token_length] (Tensor)
+    #     Returns:
+    #         dict containing:
+    #             - "loss": scalar loss
+    #             - "motion_emb": [bs, latent_dim]
+    #             - "text_emb": [bs, 512]
+    #     """
+    #     # Ensure motion_batch is on the correct device
+    #     for k, v in motion_batch.items():
+    #         if isinstance(v, torch.Tensor):
+    #             motion_batch[k] = v.to(self.device)
 
-        return {
-            "loss": loss,
-            "motion_emb": motion_emb,
-            "text_emb": text_emb
-        }
+    #     # Tokenize text is already done outside and passed as 'text_tokenized'
+    #     text_tokenized = text_tokenized.to(self.device)
+
+    #     # 1. Motion Encoder forward => motion embedding
+    #     motion_emb = self.motion_encoder(motion_batch)  # [bs, latent_dim]
+
+    #     # 2. Text Encoder forward => text embedding
+    #     text_emb = self.text_encoder(text_tokenized)      # [bs, 512]
+
+    #     # 3. Contrastive Loss
+    #     loss = self.contrastive_loss(motion_emb, text_emb)
+
+    #     return {
+    #         "loss": loss,
+    #         "motion_emb": motion_emb,
+    #         "text_emb": text_emb
+    #     }

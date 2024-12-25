@@ -67,9 +67,11 @@ class HumanML3D(Dataset):
 
                 data_dict[name] = {
                     "motion": motion,          # shape [T, 263]
-                    "captions": text_data      # list of raw text strings
+                    "captions": text_data,     # list of raw text strings
+                    "motion_id": name          # or parse to int if you prefer
                 }
             except FileNotFoundError:
+                print(f"File not found: {name}")
                 continue
 
         return data_dict
@@ -87,7 +89,9 @@ class HumanML3D(Dataset):
         # D: The total number of features for each frame, encompassing 4 root features, 21 * 9 = 189 joint positions/rotations, 22 * 3 = 66 local velocities, and 4 foot contacts
         motion_raw = item["motion"]   
         captions = item["captions"]   # list of raw text strings
-        caption = random.choice(captions)
+        motion_id = item["motion_id"] 
+        print(f"Motion shape: {motion_raw.shape}, Captions: {captions}, Motion ID: {motion_id}")
+        # caption = random.choice(captions)
 
         # Normalize motion data
         motion_raw = (motion_raw - self.mean) / self.std  # shape [T, 263]
@@ -97,10 +101,11 @@ class HumanML3D(Dataset):
 
         # Construct sample dictionary
         sample = {
-            "x": motion,          # np array [max_len, 263]
-            "mask": mask,         # np boolean array [max_len]
-            "lengths": length,    # int
-            "clip_text": caption  # string
+            "x": motion,               # np array [max_len, 263]
+            "mask": mask,              # np boolean array [max_len]
+            "lengths": length,         # int
+            "captions": captions,      # list of raw strings
+            "motion_id": motion_id     # unique identifier
         }
         return sample
 
