@@ -84,7 +84,7 @@ class MotionTransformerEncoder(nn.Module):
 
 
 ###########################################
-# 3) Simple Contrastive Loss (CLIP-like)  #
+# 3) MultiCaption Contrastive Loss #
 ###########################################
 # class ContrastiveLoss(nn.Module):
 #     def __init__(self, temperature=0.07):
@@ -137,92 +137,6 @@ class MotionTransformerEncoder(nn.Module):
 #         print(f"Total loss: {total_loss.item():.4f}")
 
 #         return total_loss
-    
-# class ContrastiveLoss(nn.Module):
-#     """
-#     CLIP-like contrastive loss to align motion and text embeddings.
-#     """
-#     def __init__(self, temperature=0.07):
-#         super().__init__()
-#         self.temperature = temperature
-
-#     def forward(self, motion_emb, text_emb):
-#         # Normalize embeddings
-#         motion_emb = F.normalize(motion_emb, dim=-1)  # [bs, latent_dim]
-#         text_emb = F.normalize(text_emb, dim=-1)      # [bs, 512]
-
-#         # Ensure dimensions match
-#         if motion_emb.size(-1) != text_emb.size(-1):
-#             raise ValueError(f"Embedding dimensions must match. Got motion_emb: {motion_emb.size(-1)}, text_emb: {text_emb.size(-1)}")
-
-#         # Compute similarity matrices
-#         logits_per_motion = torch.matmul(motion_emb, text_emb.t()) / self.temperature  # [bs, bs]
-#         logits_per_text = logits_per_motion.t()                                        # [bs, bs]
-
-#         # Ground truth labels
-#         batch_size = motion_emb.size(0)
-#         ground_truth = torch.arange(batch_size, device=motion_emb.device)
-
-#         # Compute cross-entropy losses
-#         loss_motion = F.cross_entropy(logits_per_motion, ground_truth)
-#         loss_text = F.cross_entropy(logits_per_text, ground_truth)
-#         total_loss = (loss_motion + loss_text) / 2.0
-
-#         return total_loss
-
-# class MultiCaption_ContrastiveLoss(nn.Module):
-#     def __init__(self, temperature=0.07):
-#         super().__init__()
-#         self.temperature = temperature
-
-#     def forward(self, motion_embs, text_embs_list, motion_ids):
-#         """
-#         Args:
-#             motion_embs: [batch_size, latent_dim] - motion embeddings
-#             text_embs_list: list of [num_captions_i, latent_dim] - text embeddings for each motion
-#             motion_ids: [batch_size] - unique ID for each motion to identify clusters
-#         """
-#         batch_size = motion_embs.shape[0]
-#         device = motion_embs.device
-        
-#         # Normalize all embeddings
-#         motion_embs = F.normalize(motion_embs, dim=-1)  # [batch_size, latent_dim]
-        
-#         # Prepare storage for all embeddings and their cluster IDs
-#         all_embeddings = [motion_embs]  # Start with motion embeddings
-#         all_cluster_ids = [motion_ids]  # Motion cluster IDs
-        
-#         # Add text embeddings
-#         for bid, text_embs in enumerate(text_embs_list):
-#             text_embs = F.normalize(text_embs, dim=-1)  # [num_captions_i, latent_dim]
-#             all_embeddings.append(text_embs)
-#             # Repeat motion_id for each caption
-#             all_cluster_ids.append(torch.full((text_embs.shape[0],), motion_ids[bid], device=device))
-        
-#         # Concatenate all embeddings and cluster IDs
-#         all_embeddings = torch.cat(all_embeddings, dim=0)  # [total_items, latent_dim]
-#         all_cluster_ids = torch.cat(all_cluster_ids, dim=0)  # [total_items]
-        
-#         # Compute similarity matrix
-#         similarity = torch.matmul(all_embeddings, all_embeddings.t()) / self.temperature
-        
-#         # Create cluster-based labels
-#         # Items with same cluster_id should be similar, different cluster_ids should be dissimilar
-#         labels = (all_cluster_ids.unsqueeze(0) == all_cluster_ids.unsqueeze(1)).float()
-        
-#         # Remove self-similarity from labels
-#         labels = labels * (1 - torch.eye(labels.shape[0], device=device))
-        
-#         # Compute loss
-#         similarity = similarity.masked_fill(torch.eye(similarity.shape[0], device=device).bool(), -float('inf'))
-        
-#         # Convert to log probabilities
-#         log_probs = F.log_softmax(similarity, dim=-1)
-        
-#         # Compute loss (negative log likelihood of positive pairs)
-#         loss = -(log_probs * labels).sum(dim=-1).mean()
-        
-#         return loss
 
 class MultiCaption_ContrastiveLoss(nn.Module):
     def __init__(self, temperature=0.07):
@@ -349,42 +263,3 @@ class MotionClipModel(nn.Module):
         Wrap your MultiCaption_ContrastiveLoss
         """
         return self.multicap_loss(motion_embs, text_embs_list, motion_ids)
-
-
-    # def forward(self, motion_batch, text_tokenized):
-    #     """
-    #     Args:
-    #         motion_batch: dictionary containing:
-    #             - "x": [bs, max_len, 263] (Tensor)
-    #             - "mask": [bs, max_len] (bool Tensor)
-    #             - "lengths": [bs] (int Tensor)
-    #             - "y": [bs] (Tensor) - not used in contrastive loss
-    #         text_tokenized: [bs, token_length] (Tensor)
-    #     Returns:
-    #         dict containing:
-    #             - "loss": scalar loss
-    #             - "motion_emb": [bs, latent_dim]
-    #             - "text_emb": [bs, 512]
-    #     """
-    #     # Ensure motion_batch is on the correct device
-    #     for k, v in motion_batch.items():
-    #         if isinstance(v, torch.Tensor):
-    #             motion_batch[k] = v.to(self.device)
-
-    #     # Tokenize text is already done outside and passed as 'text_tokenized'
-    #     text_tokenized = text_tokenized.to(self.device)
-
-    #     # 1. Motion Encoder forward => motion embedding
-    #     motion_emb = self.motion_encoder(motion_batch)  # [bs, latent_dim]
-
-    #     # 2. Text Encoder forward => text embedding
-    #     text_emb = self.text_encoder(text_tokenized)      # [bs, 512]
-
-    #     # 3. Contrastive Loss
-    #     loss = self.contrastive_loss(motion_emb, text_emb)
-
-    #     return {
-    #         "loss": loss,
-    #         "motion_emb": motion_emb,
-    #         "text_emb": text_emb
-    #     }
