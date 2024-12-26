@@ -111,8 +111,8 @@ class HumanML3D(Dataset):
         motion_raw = (motion_raw - self.mean) / self.std
         motion, mask, length = self._pad_or_truncate_motion(motion_raw)
 
-        print(captions)
-        print(shuffled_event_texts)
+        # print(captions)
+        # print(shuffled_event_texts)
 
         sample = {
             "x": motion,

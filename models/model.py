@@ -369,6 +369,7 @@ class MotionTextAlignmentLoss(nn.Module):
 
         return final_loss
 
+
 #########################################################
 # 4) Combined MotionClipModel (Motion + Text)         #
 #########################################################
@@ -417,12 +418,8 @@ class MotionClipModel(nn.Module):
         """
         Encodes a list of text captions using the CLIP text encoder.
         """
-        print("Input texts:", texts)
-        print("Type of texts:", type(texts))
-
         # Tokenize texts using CLIP tokenizer
         tokenized_texts = clip.tokenize(texts).to(self.device)  # [num_texts, token_length]
-        
         # Pass through CLIP text encoder
         text_embs = self.text_encoder(tokenized_texts)  # [num_texts, latent_dim]
         

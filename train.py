@@ -48,8 +48,9 @@ def train_one_epoch(model, dataloader, optimizer, device="cuda"):
             text_embs_list.append(text_embs)
 
             # Encode shuffled event texts
-            shuffled_text_embs = model.encode_texts_for_one_item([text for text in shuffled_event_texts if text != ""])  # [num_shuffled_texts, latent_dim]
-            shuffled_text_embs_list.append(shuffled_text_embs)
+            if any(text != "" for text in shuffled_event_texts):
+                shuffled_text_embs = model.encode_texts_for_one_item([text for text in shuffled_event_texts if text != ""])
+                shuffled_text_embs_list.append(shuffled_text_embs)
 
             # Assign a numeric motion ID
             motion_ids_tensor.append(hash(batch["motion_id"][i]) % 100000)
@@ -108,8 +109,9 @@ def validate_one_epoch(model, dataloader, device="cuda"):
                 text_embs = model.encode_texts_for_one_item(captions)
                 text_embs_list.append(text_embs)
 
-                shuffled_text_embs = model.encode_texts_for_one_item([text for text in shuffled_event_texts if text != ""])
-                shuffled_text_embs_list.append(shuffled_text_embs)
+                if any(text != "" for text in shuffled_event_texts):
+                    shuffled_text_embs = model.encode_texts_for_one_item([text for text in shuffled_event_texts if text != ""])
+                    shuffled_text_embs_list.append(shuffled_text_embs)
 
                 motion_ids_tensor.append(hash(batch["motion_id"][i]) % 100000)
 

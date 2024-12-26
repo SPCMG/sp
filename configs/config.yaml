@@ -13,8 +13,8 @@ train:
   batch_size: 2                       # Batch size for training
   shuffle: true                       # Shuffle the training data
   num_workers: 4                      # Number of subprocesses for data loading
-  learning_rate: 1e-4                 # Learning rate for optimizer
-  num_epochs: 10                      # Number of training epochs
+  learning_rate: 1e-4                 # Learning rate for optimizer, 2e-4
+  num_epochs: 10                      # Number of training epochs, 300
 
 model:
   latent_dim: 512                     # Dimension of the latent space
