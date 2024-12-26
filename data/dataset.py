@@ -3,6 +3,8 @@ import numpy as np
 from os.path import join as pjoin
 from torch.utils.data import Dataset
 from tqdm import tqdm
+import json
+from itertools import permutations
 
 class HumanML3D(Dataset):
     def __init__(self, opt, split="train"):
@@ -44,32 +46,45 @@ class HumanML3D(Dataset):
         for name in tqdm(self.data_files, desc=f"Loading {self.split} data"):
             motion_path = pjoin(self.opt.motion_dir, f"{name}.npy")
             text_path = pjoin(self.opt.text_dir, f"{name}.txt")
+            event_text_dir = pjoin(self.opt.event_text_dir)
+
             try:
-                motion = np.load(motion_path)  # shape [T, 263]
-                # Filter out invalid motion lengths
+                motion = np.load(motion_path)
                 if len(motion) < self.min_motion_length or len(motion) > self.max_motion_length:
                     continue
 
-                # Load captions
-                with open(text_path, "r") as ftxt:
-                    text_data = []
-                    for line in ftxt:
-                        line_split = line.strip().split("#")
-                        if len(line_split) < 1:
-                            continue
-                        caption = line_split[0].strip()
-                        if caption == "":
-                            continue
-                        text_data.append(caption)
+                with open(text_path, "r") as f:
+                    captions = [line.strip() for line in f if line.strip()]
 
-                if len(text_data) == 0:
-                    continue
+                shuffled_event_texts = []
+                for i, cap in enumerate(captions):
+                    event_path = pjoin(event_text_dir, f"{name}_{i}.json")
+                    with open(event_path, "r") as fjson:
+                        event_data = json.load(fjson)
+                        events = event_data.get("events", [])
+                        original_text = " ".join(events).lower()
 
-                data_dict[name] = {
-                    "motion": motion,          # shape [T, 263]
-                    "captions": text_data,     # list of raw text strings
-                    "motion_id": name          # or parse to int if you prefer
-                }
+                        # Generate all permutations of the events
+                        all_permutations = permutations(events)
+    
+                        # Create shuffled texts excluding the original order
+                        shuffled_texts = [
+                            " ".join(perm).lower() for perm in all_permutations if " ".join(perm).lower() != original_text
+                        ]
+
+                        # Print the result for debugging
+                        print("Original Text:", original_text)
+                        print("Shuffled Texts:", shuffled_texts)
+
+                        shuffled_event_texts.append(shuffled_texts)
+
+                if len(captions) > 0:
+                    data_dict[name] = {
+                        "motion": motion,
+                        "captions": captions,
+                        "shuffled_event_texts": shuffled_event_texts,
+                        "motion_id": name,
+                    }
             except FileNotFoundError:
                 print(f"File not found: {name}")
                 continue
@@ -87,25 +102,21 @@ class HumanML3D(Dataset):
         # motion_raw: [T, D], D = 263
         # T: The number of frames in the motion sequence. Each frame represents a snapshot of the motion at a given point in time.
         # D: The total number of features for each frame, encompassing 4 root features, 21 * 9 = 189 joint positions/rotations, 22 * 3 = 66 local velocities, and 4 foot contacts
-        motion_raw = item["motion"]   
-        captions = item["captions"]   # list of raw text strings
-        motion_id = item["motion_id"] 
-        print(f"Motion shape: {motion_raw.shape}, Captions: {captions}, Motion ID: {motion_id}")
-        # caption = random.choice(captions)
+        motion_raw = item["motion"]
+        captions = item["captions"]
+        shuffled_event_texts = item["shuffled_event_texts"]
+        motion_id = item["motion_id"]
 
-        # Normalize motion data
-        motion_raw = (motion_raw - self.mean) / self.std  # shape [T, 263]
-
-        # Pad or truncate motion data
+        motion_raw = (motion_raw - self.mean) / self.std
         motion, mask, length = self._pad_or_truncate_motion(motion_raw)
 
-        # Construct sample dictionary
         sample = {
-            "x": motion,               # np array [max_len, 263]
-            "mask": mask,              # np boolean array [max_len]
-            "lengths": length,         # int
-            "captions": captions,      # list of raw strings
-            "motion_id": motion_id     # unique identifier
+            "x": motion,
+            "mask": mask,
+            "lengths": length,
+            "captions": captions,
+            "shuffled_event_texts": shuffled_event_texts,
+            "motion_id": motion_id
         }
         return sample
 
