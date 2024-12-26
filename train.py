@@ -19,19 +19,27 @@ def train_one_epoch(model, dataloader, optimizer, device="cuda"):
         optimizer.zero_grad()
 
         # 1. Prepare motion data
-        motion_batch = {k: v.to(device) for k, v in batch.items() if k in ["x", "mask", "lengths"]}
-        motion_ids_list = batch["motion_id"]
+        x = batch["x"].to(device)          # [bs, max_len, 263]
+        mask = batch["mask"].to(device)    # [bs, max_len]
+        lengths = batch["lengths"].to(device)
+        
+        motion_batch = {
+            "x": x,
+            "mask": mask,
+            "lengths": lengths
+        }
 
         # 2. Encode motion embeddings
-        motion_embs = model.encode_motion(motion_batch)
+        motion_embs = model.encode_motion(motion_batch)  # [bs, latent_dim]
 
         # 3. Initialize lists for text embeddings and motion IDs
         text_embs_list = []
         shuffled_text_embs_list = []
         motion_ids_tensor = []
+        bs = x.size(0)
 
         # 4. Process each sample in the batch
-        for i in range(len(motion_ids_list)):
+        for i in range(bs):
             captions = batch["captions"][i]  # Original captions for the motion
             shuffled_event_texts = batch["shuffled_event_texts"][i]  # Shuffled event texts for this motion
 
@@ -39,16 +47,12 @@ def train_one_epoch(model, dataloader, optimizer, device="cuda"):
             text_embs = model.encode_texts_for_one_item(captions)  # [num_captions, latent_dim]
             text_embs_list.append(text_embs)
 
-            # Encode each shuffled text
-            shuffled_text_embs = []
-            for shuffled_text in shuffled_event_texts:
-                shuffled_emb = model.encode_texts_for_one_item([shuffled_text])  # [1, latent_dim]
-                shuffled_text_embs.append(shuffled_emb)
-            if shuffled_text_embs:
-                shuffled_text_embs_list.append(torch.cat(shuffled_text_embs, dim=0))  # [num_shuffled_texts, latent_dim]
+            # Encode shuffled event texts
+            shuffled_text_embs = model.encode_texts_for_one_item(shuffled_event_texts)  # [num_shuffled_texts, latent_dim]
+            shuffled_text_embs_list.append(shuffled_text_embs)
 
             # Assign a numeric motion ID
-            motion_ids_tensor.append(hash(motion_ids_list[i]) % 100000)
+            motion_ids_tensor.append(hash(batch["motion_id"][i]) % 100000)
 
         # Convert motion_ids_tensor to a tensor on the device
         motion_ids_tensor = torch.tensor(motion_ids_tensor, dtype=torch.long, device=device)
@@ -62,12 +66,9 @@ def train_one_epoch(model, dataloader, optimizer, device="cuda"):
         loss.backward()
         optimizer.step()
 
-        # Track loss
         total_loss += loss.item()
         num_batches += 1
-        print(f"Batch {batch_idx} loss: {loss.item():.4f}")
 
-    # Compute average loss
     average_loss = total_loss / max(num_batches, 1)
     return average_loss
 
@@ -80,8 +81,15 @@ def validate_one_epoch(model, dataloader, device="cuda"):
     with torch.no_grad():
         for batch_idx, batch in enumerate(dataloader):
             # 1. Prepare motion data
-            motion_batch = {k: v.to(device) for k, v in batch.items() if k in ["x", "mask", "lengths"]}
-            motion_ids_list = batch["motion_id"]
+            x = batch["x"].to(device)
+            mask = batch["mask"].to(device)
+            lengths = batch["lengths"].to(device)
+
+            motion_batch = {
+                "x": x,
+                "mask": mask,
+                "lengths": lengths
+            }
 
             # 2. Encode motion embeddings
             motion_embs = model.encode_motion(motion_batch)
@@ -90,28 +98,21 @@ def validate_one_epoch(model, dataloader, device="cuda"):
             text_embs_list = []
             shuffled_text_embs_list = []
             motion_ids_tensor = []
+            bs = x.size(0)
 
             # 4. Process each sample in the batch
-            for i in range(len(motion_ids_list)):
-                captions = batch["captions"][i]  # Original captions for the motion
-                shuffled_event_texts = batch["shuffled_event_texts"][i]  # Shuffled event texts for this motion
+            for i in range(bs):
+                captions = batch["captions"][i]
+                shuffled_event_texts = batch["shuffled_event_texts"][i]
 
-                # Encode original captions
-                text_embs = model.encode_texts_for_one_item(captions)  # [num_captions, latent_dim]
+                text_embs = model.encode_texts_for_one_item(captions)
                 text_embs_list.append(text_embs)
 
-                # Encode each shuffled text
-                shuffled_text_embs = []
-                for shuffled_text in shuffled_event_texts:
-                    shuffled_emb = model.encode_texts_for_one_item([shuffled_text])  # [1, latent_dim]
-                    shuffled_text_embs.append(shuffled_emb)
-                if shuffled_text_embs:
-                    shuffled_text_embs_list.append(torch.cat(shuffled_text_embs, dim=0))  # [num_shuffled_texts, latent_dim]
+                shuffled_text_embs = model.encode_texts_for_one_item(shuffled_event_texts)
+                shuffled_text_embs_list.append(shuffled_text_embs)
 
-                # Assign a numeric motion ID
-                motion_ids_tensor.append(hash(motion_ids_list[i]) % 100000)
+                motion_ids_tensor.append(hash(batch["motion_id"][i]) % 100000)
 
-            # Convert motion_ids_tensor to a tensor on the device
             motion_ids_tensor = torch.tensor(motion_ids_tensor, dtype=torch.long, device=device)
 
             # 5. Compute loss
@@ -119,11 +120,9 @@ def validate_one_epoch(model, dataloader, device="cuda"):
                 motion_embs, text_embs_list, shuffled_text_embs_list, motion_ids_tensor
             )
 
-            # Track loss
             total_loss += loss.item()
             num_batches += 1
 
-    # Compute average loss
     average_loss = total_loss / max(num_batches, 1)
     return average_loss
 

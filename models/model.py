@@ -428,3 +428,22 @@ class MotionClipModel(nn.Module):
         return self.motion_text_alignment_loss(
             motion_embs, text_embs_list, shuffled_text_embs_list, motion_ids
         )
+    
+    def encode_texts_for_one_item(self, texts):
+        """
+        Encodes a list of text captions using the CLIP text encoder.
+        Args:
+            texts: List of text strings.
+        Returns:
+            torch.Tensor: Encoded text embeddings of shape [num_texts, latent_dim].
+        """
+        print("Input texts:", texts)
+        print("Type of texts:", type(texts))
+
+        # Tokenize texts using CLIP tokenizer
+        tokenized_texts = clip.tokenize(texts).to(self.device)  # [num_texts, token_length]
+        
+        # Pass through CLIP text encoder
+        text_embs = self.text_encoder(tokenized_texts)  # [num_texts, latent_dim]
+        
+        return text_embs

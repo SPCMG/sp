@@ -5,6 +5,7 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 import json
 from itertools import permutations
+import torch.nn as nn
 
 class HumanML3D(Dataset):
     def __init__(self, opt, split="train"):
@@ -54,7 +55,7 @@ class HumanML3D(Dataset):
                     continue
 
                 with open(text_path, "r") as f:
-                    captions = [line.strip() for line in f if line.strip()]
+                    captions = [line.split("#")[0].strip() for line in f if line.strip()]
 
                 shuffled_event_texts = []
                 for i, cap in enumerate(captions):
@@ -65,18 +66,18 @@ class HumanML3D(Dataset):
                         original_text = " ".join(events).lower()
 
                         # Generate all permutations of the events
-                        all_permutations = permutations(events)
-    
+                        all_permutations = list(permutations(events))
+                        random.shuffle(all_permutations)
+
                         # Create shuffled texts excluding the original order
                         shuffled_texts = [
                             " ".join(perm).lower() for perm in all_permutations if " ".join(perm).lower() != original_text
                         ]
 
-                        # Print the result for debugging
-                        print("Original Text:", original_text)
-                        print("Shuffled Texts:", shuffled_texts)
+                        shuffled_event_texts.extend(shuffled_texts)
 
-                        shuffled_event_texts.append(shuffled_texts)
+                # Take the first 5 shuffled texts or pad with empty strings if less than 5
+                shuffled_event_texts = shuffled_event_texts[:5] + [""] * (5 - len(shuffled_event_texts))
 
                 if len(captions) > 0:
                     data_dict[name] = {
@@ -109,6 +110,9 @@ class HumanML3D(Dataset):
 
         motion_raw = (motion_raw - self.mean) / self.std
         motion, mask, length = self._pad_or_truncate_motion(motion_raw)
+
+        print(captions)
+        print(shuffled_event_texts)
 
         sample = {
             "x": motion,
