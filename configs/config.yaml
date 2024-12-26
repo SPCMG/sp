@@ -20,8 +20,14 @@ model:
   latent_dim: 512                     # Dimension of the latent space
   num_layers: 4                       # Number of transformer layers in motion encoder
   num_heads: 4                        # Number of attention heads in motion encoder
+  ff_size: 1024                       # Feedforward size in motion encoder
   dropout: 0.1                        # Dropout rate in motion encoder
   clip_model_name: "ViT-B/32"         # CLIP model variant to use
+  activation: "gelu"                  # Activation function in motion encoder
+
+loss:
+  temperature: 0.07                   # Temperature parameter for contrastive loss
+  margin: 0.2                         # Margin parameter for contrastive loss
 
 checkpoint:
   save_path: "./checkpoints"          # Directory to save model checkpoints

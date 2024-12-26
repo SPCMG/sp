@@ -377,26 +377,39 @@ class MotionClipModel(nn.Module):
     """
     Combined MotionCLIP model with motion encoder, text encoder, and alignment loss.
     """
-    def __init__(self, njoints=22, n_feats=263, num_frames=196, latent_dim=512,
-                 clip_model_name="ViT-B/32", device="cuda"):
+    def __init__(
+        self,
+        n_feats=263,
+        num_frames=196,
+        latent_dim=512,
+        num_layers=4,
+        num_heads=4,
+        ff_size=1024,
+        dropout=0.1,
+        clip_model_name="ViT-B/32",
+        activation="gelu",
+        temperature=0.07,
+        margin=0.2,
+        device="cuda"
+    ):
         super().__init__()
         self.device = device
 
-        # Motion Encoder (Transformer)
+        # Motion Encoder
         self.motion_encoder = MotionTransformerEncoder(
             modeltype="transformer",
             n_features=n_feats,
             num_frames=num_frames,
             latent_dim=latent_dim,
-            ff_size=1024,
-            num_layers=4,
-            num_heads=4,
-            dropout=0.1,
-            activation="gelu",
+            ff_size=ff_size,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            dropout=dropout,
+            activation=activation,
             device=device
         )
 
-        # Text Encoder (CLIP)
+        # Text Encoder
         self.text_encoder = ClipTextEncoder(
             clip_model_name=clip_model_name, 
             device=device
@@ -404,8 +417,8 @@ class MotionClipModel(nn.Module):
 
         # Alignment Loss
         self.motion_text_alignment_loss = MotionTextAlignmentLoss(
-            temperature=0.07,
-            margin=0.2
+            temperature=temperature,
+            margin=margin
         )
 
     def encode_motion(self, motion_batch):

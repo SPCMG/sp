@@ -157,11 +157,17 @@ def main():
     model = MotionClipModel(
         n_feats=cfg.data.n_feats,
         num_frames=cfg.data.max_motion_length,
-        latent_dim=cfg.model.latent_dim,
-        clip_model_name=cfg.model.clip_model_name,
+        latent_dim=cfg.model.latent_dim,       
+        num_layers=cfg.model.num_layers,    
+        num_heads=cfg.model.num_heads,         
+        ff_size=cfg.model.ff_size,           
+        dropout=cfg.model.dropout,          
+        clip_model_name=cfg.model.clip_model_name, 
+        activation=cfg.model.activation,      
+        temperature=cfg.loss.temperature,
+        margin=cfg.loss.margin,
         device=device
     ).to(device)
-
     optimizer = optim.Adam(model.motion_encoder.parameters(), lr=cfg.train.learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=2)
 
