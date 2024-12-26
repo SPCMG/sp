@@ -139,14 +139,15 @@ class MotionTransformerEncoder(nn.Module):
 #         return total_loss
 
 class MultiCaption_ContrastiveLoss(nn.Module):
-    def __init__(self, temperature=0.07):
+    def __init__(self, temperature=0.07, margin=0.2):
         super().__init__()
         self.temperature = temperature
+        self.margin = margin
 
     def forward(self, motion_embs, text_embs_list, motion_ids):
         device = motion_embs.device
         
-        # 1. Normalize embeddings (add small epsilon for numerical stability)
+        # 1. Normalize all embeddings
         motion_embs = F.normalize(motion_embs + 1e-8, dim=-1)
         
         all_embeddings = [motion_embs]
@@ -154,43 +155,67 @@ class MultiCaption_ContrastiveLoss(nn.Module):
         
         # 2. Process text embeddings
         for bid, text_embs in enumerate(text_embs_list):
-            # Add small epsilon and normalize
             text_embs = F.normalize(text_embs + 1e-8, dim=-1)
             all_embeddings.append(text_embs)
             all_cluster_ids.append(torch.full((text_embs.shape[0],), motion_ids[bid], device=device))
         
         # 3. Concatenate all embeddings and cluster IDs
-        all_embeddings = torch.cat(all_embeddings, dim=0)  # [total_items, latent_dim]
+        all_embeddings = torch.cat(all_embeddings, dim=0)    # [total_items, latent_dim]
         all_cluster_ids = torch.cat(all_cluster_ids, dim=0)  # [total_items]
         
-        # 4. Compute similarity with gradient clipping
-        similarity = torch.clamp(
-            torch.matmul(all_embeddings, all_embeddings.t()) / self.temperature,
-            min=-100,
-            max=100
-        )
+        # 4. Compute similarity matrix
+        similarity = torch.matmul(all_embeddings, all_embeddings.t()) / self.temperature
         
-        # 5. Create cluster-based labels with handling for empty clusters
+        # 5. Create positive/negative masks
         labels = (all_cluster_ids.unsqueeze(0) == all_cluster_ids.unsqueeze(1)).float()
+        identity_mask = torch.eye(labels.shape[0], device=device).bool()
         
-        # 6. Remove self-similarity and create mask for valid pairs
-        mask = (1 - torch.eye(labels.shape[0], device=device))
-        labels = labels * mask
+        # Separate positive and negative pairs
+        positive_mask = (labels > 0.5) & (~identity_mask)  # Same motion/caption pairs, exclude self
+        negative_mask = (labels < 0.5) & (~identity_mask)  # Different motion/caption pairs
         
-        # Add small epsilon to avoid log(0)
-        similarity = similarity.masked_fill(torch.eye(similarity.shape[0], device=device).bool(), -1e9)
+        # 6. Compute InfoNCE loss with margin
+        total_loss = torch.tensor(0.0, device=device)
+        total_items = 0
         
-        # 7. Compute loss with numerical stability
-        log_probs = F.log_softmax(similarity, dim=-1)
+        for i in range(len(all_embeddings)):
+            positives = similarity[i][positive_mask[i]]
+            negatives = similarity[i][negative_mask[i]]
+            
+            if len(positives) > 0 and len(negatives) > 0:
+                # InfoNCE part: Pull positives together
+                numerator = torch.exp(positives)
+                denominator = numerator.sum() + torch.exp(negatives).sum()
+                infonce_loss = -torch.log(numerator/denominator).mean()
+                
+                # Margin part: Push negatives apart with minimum margin
+                margin_loss = torch.max(
+                    torch.zeros_like(negatives),
+                    negatives + self.margin  # negative similarities should be less than -margin
+                ).mean()
+                
+                # Combine losses
+                total_loss += infonce_loss + margin_loss
+                total_items += 1
         
-        # 8. Compute loss only for valid pairs
-        valid_pairs = (labels.sum(dim=1) > 0)
-        if valid_pairs.sum() == 0:
+        if total_items == 0:
             return torch.tensor(0.0, device=device, requires_grad=True)
             
-        loss = -(log_probs * labels)[valid_pairs].sum(dim=-1).mean()
+        avg_loss = total_loss / total_items
         
-        return loss
+        # For monitoring
+        with torch.no_grad():
+            pos_sim = similarity[positive_mask].mean() if positive_mask.sum() > 0 else torch.tensor(0.0)
+            neg_sim = similarity[negative_mask].mean() if negative_mask.sum() > 0 else torch.tensor(0.0)
+            print(f"\nSimilarities - Positive: {pos_sim:.4f}, Negative: {neg_sim:.4f}")
+            print(f"Loss: {avg_loss:.4f}")
+            
+            # Additional monitoring of margin violations
+            if negative_mask.sum() > 0:
+                margin_violations = (similarity[negative_mask] > -self.margin).float().mean()
+                print(f"Margin violations: {margin_violations:.2%}")
+        
+        return avg_loss
 
 #########################################################
 # 4) Combined MotionClipModel (Motion + Text)         #
@@ -234,7 +259,10 @@ class MotionClipModel(nn.Module):
         )
 
         # 3. Multi-caption Loss
-        self.multicap_loss = MultiCaption_ContrastiveLoss(temperature=0.07)
+        self.multicap_loss = MultiCaption_ContrastiveLoss(
+            temperature=0.07,  # Controls sharpness of similarity distribution
+            margin=0.2         # Minimum separation between positive and negative pairs
+        )
 
     def encode_motion(self, motion_batch):
         # Move everything to device
