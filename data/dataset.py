@@ -16,6 +16,7 @@ class HumanML3D(Dataset):
         """
         self.opt = opt
         self.split = split
+        self.max_text_length = opt.max_text_length
 
         # Load normalization parameters
         self.mean = np.load(pjoin(opt.data_root, "Mean.npy"))
@@ -44,20 +45,17 @@ class HumanML3D(Dataset):
             
             # 1) Check if motion file exists
             if not os.path.exists(motion_path):
+                print(f"Skipping {name}: .npy file missing at {motion_path}")
                 continue
 
-            # 2) Quickly read the shape of the .npy file
-            try:
-                with np.load(motion_path, mmap_mode='r') as motion_temp:
-                    T = motion_temp.shape[0]
-            except:
-                continue
-
-            # 3) Filter out-of-range
+            # 2) Filter out-of-range
+            motion_temp = np.load(motion_path, mmap_mode='r')
+            T = len(motion_temp)
             if T < self.min_motion_length or T > self.max_motion_length:
+                print(f"Skipping {name}: Length {T} outside range [{self.min_motion_length}, {self.max_motion_length}]")
                 continue
 
-            # 4) If we get here, it's a valid motion => we store it in the index
+            # 3) If we get here, it's a valid motion => we store it in the index
             data_index[name] = {
                 "motion_path": motion_path,
                 "text_path": text_path,
@@ -65,6 +63,7 @@ class HumanML3D(Dataset):
                 "motion_id": name
             }
 
+        print(f"Kept {len(data_index)} items for split {self.split}")
         return data_index
 
     def __len__(self):
@@ -86,6 +85,7 @@ class HumanML3D(Dataset):
         # 3) Load captions from the text file
         with open(text_path, "r") as f:
             captions = [line.split("#")[0].strip() for line in f if line.strip()]
+            captions = [self._truncate_text(cap, self.max_text_length) for cap in captions]
 
         # 4) For each caption, load event JSON and build permutations
         shuffled_event_texts = []
@@ -106,14 +106,15 @@ class HumanML3D(Dataset):
                         " ".join(perm).lower() for perm in all_permutations
                         if " ".join(perm).lower() != original_text
                     ]
+                    shuffled_texts = [self._truncate_text(text, self.max_text_length) for text in shuffled_texts]
                     shuffled_event_texts.extend(shuffled_texts)
             except FileNotFoundError:
                 pass
 
         # 5) Truncate/pad shuffled event texts
-        shuffled_event_texts = shuffled_event_texts[:5]
-        if len(shuffled_event_texts) < 5:
-            shuffled_event_texts += [""] * (5 - len(shuffled_event_texts))
+        # shuffled_event_texts = shuffled_event_texts[:5]
+        # if len(shuffled_event_texts) < 5:
+        #     shuffled_event_texts += [""] * (5 - len(shuffled_event_texts))
 
         # 6) Normalize motion => (motion_raw - mean) / std
         motion_raw = (motion_raw - self.mean) / self.std
@@ -123,8 +124,8 @@ class HumanML3D(Dataset):
 
         # 8) Return sample
         sample = {
-            "x": motion,  # [max_motion_length, 263]
-            "mask": mask,  # [max_motion_length] bool
+            "x": motion,        # [max_motion_length, 263]
+            "mask": mask,       # [max_motion_length] bool
             "lengths": length,
             "captions": captions,
             "shuffled_event_texts": shuffled_event_texts,
@@ -151,13 +152,30 @@ class HumanML3D(Dataset):
         mask[:T] = True
 
         return motion_padded, mask, T
+    
+    def _truncate_text(self, text, max_length=77):
+        """
+        Truncate a text string to the specified maximum length.
+        """
+        print("====", max_length)
+        tokenized = text.split()
+        if len(tokenized) > max_length:
+            return " ".join(tokenized[:max_length])
+        return text
 
 # Default collate_fn
 from torch.utils.data._utils.collate import default_collate
 
-def collate_fn(batch):
-    """
-    Custom collate function to handle list of dicts.
-    Converts numpy arrays to torch tensors automatically.
-    """
-    return default_collate(batch)
+def custom_collate_fn(batch):
+    # Separate `captions` and other fields
+    captions = [item["captions"] for item in batch]
+    shuffled_event_texts = [item["shuffled_event_texts"] for item in batch]
+
+    # Use default_collate for the rest
+    other_data = default_collate([{k: v for k, v in item.items() if k not in ["captions", "shuffled_event_texts"]} for item in batch])
+
+    # Add captions and shuffled_event_texts back
+    other_data["captions"] = captions
+    other_data["shuffled_event_texts"] = shuffled_event_texts
+
+    return other_data

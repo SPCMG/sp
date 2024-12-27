@@ -8,7 +8,7 @@ import wandb
 from utils.setup_wandb import setup_wandb_and_logging
 
 from configs.config import load_config
-from data.dataset import HumanML3D, collate_fn
+from data.dataset import HumanML3D, custom_collate_fn
 from models.model import MotionClipModel
 
 
@@ -50,8 +50,8 @@ def train_one_epoch(model, dataloader, optimizer, device="cuda"):
             text_embs_list.append(text_embs)
 
             # Encode shuffled event texts
-            if any(text != "" for text in shuffled_event_texts):
-                shuffled_text_embs = model.encode_texts_for_one_item([text for text in shuffled_event_texts if text != ""])
+            if shuffled_event_texts:
+                shuffled_text_embs = model.encode_texts_for_one_item(shuffled_event_texts)
                 shuffled_text_embs_list.append(shuffled_text_embs)
 
             # Assign a numeric motion ID
@@ -147,7 +147,7 @@ def main():
         batch_size=cfg.train.batch_size,
         shuffle=cfg.train.shuffle,
         num_workers=cfg.train.num_workers,
-        collate_fn=collate_fn,
+        collate_fn=custom_collate_fn,
         drop_last=True
     )
     val_loader = DataLoader(
@@ -155,7 +155,7 @@ def main():
         batch_size=cfg.train.batch_size,
         shuffle=False,
         num_workers=cfg.train.num_workers,
-        collate_fn=collate_fn,
+        collate_fn=custom_collate_fn,
         drop_last=True
     )
 
