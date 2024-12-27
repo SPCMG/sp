@@ -3,7 +3,7 @@
 #SBATCH --ntasks=4               # Adjust tasks (parallel jobs) per node as needed
 #SBATCH --cpus-per-task=4        # CPUs per task, adjust if needed
 #SBATCH --mem=200G               # Increase memory if needed
-#SBATCH --gres=gpu:4             # Use GPU if supported by the code
+#SBATCH --gres=gpu:2             # Use GPU if supported by the code
 #SBATCH --time=72:00:00          # Set the job to 1 hour max
 #SBATCH --partition=gpu          # h100, l40s
 #SBATCH --output=./logs/train_%j.log

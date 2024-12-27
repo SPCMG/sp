@@ -5,20 +5,13 @@ from torch.utils.data import Dataset
 from tqdm import tqdm
 import json
 from itertools import permutations
-import torch.nn as nn
+import os
 
 class HumanML3D(Dataset):
     def __init__(self, opt, split="train"):
         """
         Args:
-            opt: OmegaConf DictConfig with fields such as:
-                - data_root
-                - motion_dir
-                - text_dir
-                - min_motion_length
-                - max_motion_length
-                - n_joints
-                - n_feats
+            opt: OmegaConf DictConfig with fields like data_root, motion_dir, etc.
             split: 'train', 'val', or 'test'.
         """
         self.opt = opt
@@ -30,93 +23,108 @@ class HumanML3D(Dataset):
 
         self.min_motion_length = opt.min_motion_length
         self.max_motion_length = opt.max_motion_length
+        self.n_joints = opt.n_joints
+        self.n_feats = opt.n_feats
 
-        self.n_joints = opt.n_joints  # e.g., 22
-        self.n_feats = opt.n_feats    # e.g., 263 (raw features)
-
-        # Load data file list
+        # Load file list
         split_file = pjoin(opt.data_root, f"{split}.txt")
         with open(split_file, "r") as f:
             self.data_files = [line.strip() for line in f.readlines()]
 
-        # Preload data into memory
-        self.data_dict = self._load_data()
+        # Instead of loading all motion/text data now,
+        # just build a small dictionary that references paths or IDs.
+        self.data_dict = self._build_index()
 
-    def _load_data(self):
-        data_dict = {}
-        for name in tqdm(self.data_files, desc=f"Loading {self.split} data"):
+    def _build_index(self):
+        data_index = {}
+        for name in tqdm(self.data_files, desc=f"Indexing {self.split} data"):
             motion_path = pjoin(self.opt.motion_dir, f"{name}.npy")
             text_path = pjoin(self.opt.text_dir, f"{name}.txt")
-            event_text_dir = pjoin(self.opt.event_text_dir)
-
-            try:
-                motion = np.load(motion_path)
-                if len(motion) < self.min_motion_length or len(motion) > self.max_motion_length:
-                    continue
-
-                with open(text_path, "r") as f:
-                    captions = [line.split("#")[0].strip() for line in f if line.strip()]
-
-                shuffled_event_texts = []
-                for i, cap in enumerate(captions):
-                    event_path = pjoin(event_text_dir, f"{name}_{i}.json")
-                    with open(event_path, "r") as fjson:
-                        event_data = json.load(fjson)
-                        events = event_data.get("events", [])
-                        original_text = " ".join(events).lower()
-
-                        # Generate all permutations of the events
-                        all_permutations = list(permutations(events))
-                        random.shuffle(all_permutations)
-
-                        # Create shuffled texts excluding the original order
-                        shuffled_texts = [
-                            " ".join(perm).lower() for perm in all_permutations if " ".join(perm).lower() != original_text
-                        ]
-
-                        shuffled_event_texts.extend(shuffled_texts)
-
-                # Take the first 5 shuffled texts or pad with empty strings if less than 5
-                shuffled_event_texts = shuffled_event_texts[:5] + [""] * (5 - len(shuffled_event_texts))
-
-                if len(captions) > 0:
-                    data_dict[name] = {
-                        "motion": motion,
-                        "captions": captions,
-                        "shuffled_event_texts": shuffled_event_texts,
-                        "motion_id": name,
-                    }
-            except FileNotFoundError:
-                print(f"File not found: {name}")
+            event_text_dir = self.opt.event_text_dir
+            
+            # 1) Check if motion file exists
+            if not os.path.exists(motion_path):
                 continue
 
-        return data_dict
+            # 2) Quickly read the shape of the .npy file
+            try:
+                with np.load(motion_path, mmap_mode='r') as motion_temp:
+                    T = motion_temp.shape[0]
+            except:
+                continue
+
+            # 3) Filter out-of-range
+            if T < self.min_motion_length or T > self.max_motion_length:
+                continue
+
+            # 4) If we get here, it's a valid motion => we store it in the index
+            data_index[name] = {
+                "motion_path": motion_path,
+                "text_path": text_path,
+                "event_text_dir": event_text_dir,
+                "motion_id": name
+            }
+
+        return data_index
 
     def __len__(self):
         return len(self.data_dict)
 
     def __getitem__(self, idx):
-        # Retrieve data sample
+        # 1) Retrieve paths/info for this item
         key = list(self.data_dict.keys())[idx]
-        item = self.data_dict[key]
+        item_info = self.data_dict[key]
 
-        # motion_raw: [T, D], D = 263
-        # T: The number of frames in the motion sequence. Each frame represents a snapshot of the motion at a given point in time.
-        # D: The total number of features for each frame, encompassing 4 root features, 21 * 9 = 189 joint positions/rotations, 22 * 3 = 66 local velocities, and 4 foot contacts
-        motion_raw = item["motion"]
-        captions = item["captions"]
-        shuffled_event_texts = item["shuffled_event_texts"]
-        motion_id = item["motion_id"]
+        motion_path = item_info["motion_path"]
+        text_path = item_info["text_path"]
+        event_text_dir = item_info["event_text_dir"]
+        motion_id = item_info["motion_id"]
 
+        # 2) Load the motion .npy (only for this sample!)
+        motion_raw = np.load(motion_path)
+
+        # 3) Load captions from the text file
+        with open(text_path, "r") as f:
+            captions = [line.split("#")[0].strip() for line in f if line.strip()]
+
+        # 4) For each caption, load event JSON and build permutations
+        shuffled_event_texts = []
+        for i, cap in enumerate(captions):
+            event_path = pjoin(event_text_dir, f"{motion_id}_{i}.json")
+            try:
+                with open(event_path, "r") as fjson:
+                    event_data = json.load(fjson)
+                    events = event_data.get("events", [])
+                    original_text = " ".join(events).lower()
+
+                    # Create permutations
+                    all_permutations = list(permutations(events))
+                    random.shuffle(all_permutations)
+
+                    # Exclude the original order
+                    shuffled_texts = [
+                        " ".join(perm).lower() for perm in all_permutations
+                        if " ".join(perm).lower() != original_text
+                    ]
+                    shuffled_event_texts.extend(shuffled_texts)
+            except FileNotFoundError:
+                pass
+
+        # 5) Truncate/pad shuffled event texts
+        shuffled_event_texts = shuffled_event_texts[:5]
+        if len(shuffled_event_texts) < 5:
+            shuffled_event_texts += [""] * (5 - len(shuffled_event_texts))
+
+        # 6) Normalize motion => (motion_raw - mean) / std
         motion_raw = (motion_raw - self.mean) / self.std
+
+        # 7) Pad or truncate motion
         motion, mask, length = self._pad_or_truncate_motion(motion_raw)
 
-        # print(captions)
-        # print(shuffled_event_texts)
-
+        # 8) Return sample
         sample = {
-            "x": motion,
-            "mask": mask,
+            "x": motion,  # [max_motion_length, 263]
+            "mask": mask,  # [max_motion_length] bool
             "lengths": length,
             "captions": captions,
             "shuffled_event_texts": shuffled_event_texts,
@@ -125,31 +133,20 @@ class HumanML3D(Dataset):
         return sample
 
     def _pad_or_truncate_motion(self, motion_raw):
-        """
-        Args:
-            motion_raw: [T, 263]
-        Returns:
-            motion_padded: [max_motion_length, 263]
-            mask: [max_motion_length] boolean array
-            length: int
-        """
         T = motion_raw.shape[0]
         D = motion_raw.shape[1]
         max_len = self.max_motion_length
 
-        # Truncate if necessary
         if T > max_len:
             motion_raw = motion_raw[:max_len]
             T = max_len
 
-        # Pad if necessary
         if T < max_len:
             pad = np.zeros((max_len - T, D), dtype=motion_raw.dtype)
-            motion_padded = np.concatenate([motion_raw, pad], axis=0)  # shape [max_len, 263]
+            motion_padded = np.concatenate([motion_raw, pad], axis=0)
         else:
-            motion_padded = motion_raw  # shape [max_len, 263]
+            motion_padded = motion_raw
 
-        # Create mask
         mask = np.zeros((max_len,), dtype=bool)
         mask[:T] = True
 
