@@ -4,6 +4,8 @@ from torch.utils.data import DataLoader
 from torch import optim
 import clip
 from omegaconf import OmegaConf
+import wandb
+from utils.setup_wandb import setup_wandb_and_logging
 
 from configs.config import load_config
 from data.dataset import HumanML3D, collate_fn
@@ -133,8 +135,11 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     cfg = load_config("configs/config.yaml")
 
+    # 1) Setup wandb
+    run_name = setup_wandb_and_logging(cfg)  # returns the run name
+
+    # 2) Prepare dataset / dataloader
     train_dataset = HumanML3D(opt=cfg.data, split="train")
-    print(f"Total training samples: {len(train_dataset)}")
     val_dataset = HumanML3D(opt=cfg.data, split="val")
 
     train_loader = DataLoader(
@@ -154,42 +159,55 @@ def main():
         drop_last=True
     )
 
+    # 3) Initialize model
     model = MotionClipModel(
         n_feats=cfg.data.n_feats,
         num_frames=cfg.data.max_motion_length,
-        latent_dim=cfg.model.latent_dim,       
-        num_layers=cfg.model.num_layers,    
-        num_heads=cfg.model.num_heads,         
-        ff_size=cfg.model.ff_size,           
-        dropout=cfg.model.dropout,          
-        clip_model_name=cfg.model.clip_model_name, 
-        activation=cfg.model.activation,      
+        latent_dim=cfg.model.latent_dim,
+        num_layers=cfg.model.num_layers,
+        num_heads=cfg.model.num_heads,
+        ff_size=cfg.model.ff_size,
+        dropout=cfg.model.dropout,
+        clip_model_name=cfg.model.clip_model_name,
+        activation=cfg.model.activation,
         temperature=cfg.loss.temperature,
         margin=cfg.loss.margin,
         device=device
     ).to(device)
+
     optimizer = optim.Adam(model.motion_encoder.parameters(), lr=cfg.train.learning_rate)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', patience=2)
 
-    checkpoint_dir = cfg.checkpoint.save_path
+    # 4) Create a run-specific checkpoint directory
+    #    For example: ./checkpoints/<run_name>
+    checkpoint_dir = os.path.join(cfg.checkpoint.save_path, run_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
+    # 5) Train loop
     for epoch in range(1, cfg.train.num_epochs + 1):
         print(f"Epoch {epoch}/{cfg.train.num_epochs}")
 
         train_loss = train_one_epoch(model, train_loader, optimizer, device=device)
-        print(f"Train Loss: {train_loss:.4f}")
-
         val_loss = validate_one_epoch(model, val_loader, device=device)
-        print(f"Validation Loss: {val_loss:.4f}")
 
         # Step the scheduler with validation loss
         scheduler.step(val_loss)
-        # Optional: Print current learning rate
-        current_lr = optimizer.param_groups[0]['lr']
-        print(f"Current learning rate: {current_lr:.6f}")
 
-        # Save checkpoint
+        # Get current LR from the optimizer
+        current_lr = optimizer.param_groups[0]['lr']
+
+        # 6) Print to console
+        print(f"Train Loss: {train_loss:.4f} | Validation Loss: {val_loss:.4f} | LR: {current_lr:.6f}")
+
+        # 7) Log to wandb
+        wandb.log({
+            "Epoch": epoch,
+            "Train Loss": train_loss,
+            "Validation Loss": val_loss,
+            "Learning Rate": current_lr
+        })
+
+        # 8) Save checkpoint
         checkpoint_path = os.path.join(checkpoint_dir, f"motionclipmodel_epoch_{epoch}.pth")
         torch.save({
             "epoch": epoch,
@@ -198,6 +216,9 @@ def main():
             "scheduler_state_dict": scheduler.state_dict()
         }, checkpoint_path)
         print(f"Saved checkpoint: {checkpoint_path}\n{'-'*50}")
+
+    # 9) Mark the run as finished
+    wandb.finish()
 
 
 if __name__ == "__main__":

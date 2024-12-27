@@ -167,3 +167,4 @@ glove/
 deprecated/
 logs/
 checkpoints/
+wandb/

@@ -1,7 +1,7 @@
 data:
-  data_root: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D"                        # Root directory for data
-  motion_dir: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/new_joint_vecs"        # Directory containing motion .npy files
-  text_dir: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/texts"                   # Directory containing text .txt files
+  data_root: "dataset/HumanML3D"      # Root directory for data
+  motion_dir: "dataset/HumanML3D/new_joint_vecs"                                    # Directory containing motion .npy files
+  text_dir: "dataset/HumanML3D/texts"                                               # Directory containing text .txt files
   event_text_dir: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/event_texts"       # Directory containing event text .json files
   min_motion_length: 40               # Minimum number of frames in motion data, i.e., 2s
   max_motion_length: 200              # Maximum number of frames in motion data, i.e., 10s
@@ -10,11 +10,11 @@ data:
   n_feats: 263                        # Number of features per joint (e.g., x, y, z, velocity_x, velocity_y, velocity_z)
 
 train:
-  batch_size: 32                      # Batch size for training
+  batch_size: 2                       # Batch size for training
   shuffle: true                       # Shuffle the training data
   num_workers: 4                      # Number of subprocesses for data loading
-  learning_rate: 1e-4                 # Learning rate for optimizer, 1e-4
-  num_epochs: 300                     # Number of training epochs, 300
+  learning_rate: 1e-4                 # Learning rate for optimizer, 2e-4
+  num_epochs: 10                      # Number of training epochs, 300
 
 model:
   motion_encoder: "transformer"       # Type of motion encoder to use
@@ -33,4 +33,4 @@ loss:
 
 checkpoint:
   save_path: "./checkpoints"          # Directory to save model checkpoints
-  save_every: 30                      # Save checkpoint every 'save_every' epochs
+  save_every: 1                       # Save checkpoint every 'save_every' epochs
