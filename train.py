@@ -50,9 +50,9 @@ def train_one_epoch(model, dataloader, optimizer, device="cuda"):
             text_embs_list.append(text_embs)
 
             # Encode shuffled event texts
-            if shuffled_event_texts:
-                shuffled_text_embs = model.encode_texts_for_one_item(shuffled_event_texts)
-                shuffled_text_embs_list.append(shuffled_text_embs)
+            # if shuffled_event_texts:
+            #     shuffled_text_embs = model.encode_texts_for_one_item(shuffled_event_texts)
+            #     shuffled_text_embs_list.append(shuffled_text_embs)
 
             # Assign a numeric motion ID
             motion_ids_tensor.append(hash(batch["motion_id"][i]) % 100000)
@@ -208,14 +208,15 @@ def main():
         })
 
         # 8) Save checkpoint
-        checkpoint_path = os.path.join(checkpoint_dir, f"motionclipmodel_epoch_{epoch}.pth")
-        torch.save({
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "scheduler_state_dict": scheduler.state_dict()
-        }, checkpoint_path)
-        print(f"Saved checkpoint: {checkpoint_path}\n{'-'*50}")
+        if epoch % 50 == 0:
+            checkpoint_path = os.path.join(checkpoint_dir, f"motionclipmodel_epoch_{epoch}.pth")
+            torch.save({
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict()
+            }, checkpoint_path)
+            print(f"Saved checkpoint: {checkpoint_path}\n{'-'*50}")
 
     # 9) Mark the run as finished
     wandb.finish()

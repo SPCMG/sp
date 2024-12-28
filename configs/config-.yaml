@@ -5,6 +5,7 @@ data:
   event_text_dir: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/event_texts"       # Directory containing event text .json files
   min_motion_length: 40               # Minimum number of frames in motion data, i.e., 2s
   max_motion_length: 200              # Maximum number of frames in motion data, i.e., 10s
+  max_text_length: 60                 # Maximum number of words in text data
   max_shuffled_texts: 5               # Maximum number of shuffled texts to use for training
   n_joints: 22                        # Number of joints in the motion data
   n_feats: 263                        # Number of features per joint (e.g., x, y, z, velocity_x, velocity_y, velocity_z)

@@ -45,14 +45,14 @@ class HumanML3D(Dataset):
             
             # 1) Check if motion file exists
             if not os.path.exists(motion_path):
-                print(f"Skipping {name}: .npy file missing at {motion_path}")
+                # print(f"Skipping {name}: .npy file missing at {motion_path}")
                 continue
 
             # 2) Filter out-of-range
             motion_temp = np.load(motion_path, mmap_mode='r')
             T = len(motion_temp)
             if T < self.min_motion_length or T > self.max_motion_length:
-                print(f"Skipping {name}: Length {T} outside range [{self.min_motion_length}, {self.max_motion_length}]")
+                # print(f"Skipping {name}: Length {T} outside range [{self.min_motion_length}, {self.max_motion_length}]")
                 continue
 
             # 3) If we get here, it's a valid motion => we store it in the index
@@ -80,7 +80,7 @@ class HumanML3D(Dataset):
         motion_id = item_info["motion_id"]
 
         # 2) Load the motion .npy (only for this sample!)
-        motion_raw = np.load(motion_path)
+        motion_raw = np.load(motion_path, mmap_mode='r')
 
         # 3) Load captions from the text file
         with open(text_path, "r") as f:
@@ -98,7 +98,8 @@ class HumanML3D(Dataset):
                     original_text = " ".join(events).lower()
 
                     # Create permutations
-                    all_permutations = list(permutations(events))
+                    num_permutations = min(len(events), 3)
+                    all_permutations = list(permutations(events, num_permutations))
                     random.shuffle(all_permutations)
 
                     # Exclude the original order
@@ -157,7 +158,6 @@ class HumanML3D(Dataset):
         """
         Truncate a text string to the specified maximum length.
         """
-        print("====", max_length)
         tokenized = text.split()
         if len(tokenized) > max_length:
             return " ".join(tokenized[:max_length])
