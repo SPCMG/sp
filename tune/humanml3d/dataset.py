@@ -6,23 +6,17 @@ from torch.utils.data import Dataset
 
 class HumanML3DDataset(Dataset):
     def __init__(
-        self, 
-        text_dir, 
-        negative_text_dir, 
-        tokenizer, 
+        self,
+        text_dir,
+        negative_text_dir,
+        split_file,          # <-- new param: path to train.txt or val.txt
+        tokenizer,
         max_length=77,
-        num_other_negatives=2,
+        num_other_negatives=3,
         random_seed=42
     ):
-        """
-        Args:
-            text_dir: Directory with positive captions (e.g., <motion_id>.txt).
-            negative_text_dir: Directory with negative-swapped captions if exist (<motion_id>.txt).
-            tokenizer: CLIP tokenizer (or any Hugging Face tokenizer).
-            max_length: Max token length for the text encoder.
-            num_other_negatives: how many "other motion" lines to sample per anchor.
-            random_seed: fix seed for reproducible sampling (optional).
-        """
+        super().__init__()
+        random.seed(random_seed)
 
         self.text_dir = text_dir
         self.negative_text_dir = negative_text_dir
@@ -30,35 +24,31 @@ class HumanML3DDataset(Dataset):
         self.max_length = max_length
         self.num_other_negatives = num_other_negatives
 
-        random.seed(random_seed)
+        # Read the motion IDs from the split_file
+        with open(split_file, 'r') as f:
+            motion_ids = [line.strip() for line in f if line.strip()]
 
-        # 1) Gather all <motion_id>.txt files in text_dir
-        #    Each file corresponds to one motion
-        motion_files = sorted(glob.glob(os.path.join(text_dir, "*.txt")))
+        # For each motion_id, store the path to the "positives" file and possibly to the negatives
         self.motion_id_list = []
         self.motion_id_to_path = {}
-        for f in motion_files:
-            motion_id = os.path.splitext(os.path.basename(f))[0]
-            self.motion_id_list.append(motion_id)
-            self.motion_id_to_path[motion_id] = f
-
-        # 2) For negative-swapped lines
-        #    We'll store a dict motion_id -> path to negative file if exists
         self.motion_id_to_neg_path = {}
-        for mid in self.motion_id_list:
+
+        for mid in motion_ids:
+            text_path = os.path.join(text_dir, f"{mid}.txt")
+            if not os.path.isfile(text_path):
+                # If there's no file for this motion, skip
+                continue
+            self.motion_id_list.append(mid)
+            self.motion_id_to_path[mid] = text_path
+
             neg_path = os.path.join(negative_text_dir, f"{mid}.txt")
             if os.path.isfile(neg_path):
                 self.motion_id_to_neg_path[mid] = neg_path
             else:
                 self.motion_id_to_neg_path[mid] = None
 
-        # 3) The "samples" in our dataset: we simply treat each motion as an entry.
-        #    We'll produce one anchor line *per motion* per __getitem__ call in a single epoch.
-        #    If you want multiple anchors per file in one epoch, you can store them differently
-        #    or iterate more times. But let's keep it simple.
         self.samples = self.motion_id_list
-
-        print("[HumanML3DDataset] # Motions:", len(self.samples))
+        print(f"[HumanML3DDataset] Loaded {len(self.samples)} motions from split: {split_file}")
 
     def __len__(self):
         return len(self.samples)
@@ -154,3 +144,39 @@ class HumanML3DDataset(Dataset):
             'negatives_other_motion': neg_other_tokens,
             'negatives_same_motion' : neg_same_tokens
         }
+
+
+def collate_fn(batch):
+    anchors = []
+    pos_sames = []
+    neg_others = []
+    neg_sames = []
+
+    for item in batch:
+        if (item['anchor_tokens'] is None):
+            # skip empty item
+            continue
+
+        a_ids = item['anchor_tokens']['input_ids'].squeeze(0)
+        a_mask = item['anchor_tokens']['attention_mask'].squeeze(0)
+        anchors.append((a_ids, a_mask))
+
+        # Positives
+        p_tokens = item['positives_same_motion']
+        p_ids = [t['input_ids'].squeeze(0) for t in p_tokens]
+        p_masks = [t['attention_mask'].squeeze(0) for t in p_tokens]
+        pos_sames.append((p_ids, p_masks))
+
+        # Negatives (other motion)
+        no_tokens = item['negatives_other_motion']
+        no_ids = [t['input_ids'].squeeze(0) for t in no_tokens]
+        no_masks = [t['attention_mask'].squeeze(0) for t in no_tokens]
+        neg_others.append((no_ids, no_masks))
+
+        # Negatives (same motion swapped)
+        ns_tokens = item['negatives_same_motion']
+        ns_ids = [t['input_ids'].squeeze(0) for t in ns_tokens]
+        ns_masks = [t['attention_mask'].squeeze(0) for t in ns_tokens]
+        neg_sames.append((ns_ids, ns_masks))
+
+    return anchors, pos_sames, neg_others, neg_sames

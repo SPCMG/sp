@@ -1,0 +1,22 @@
+data:
+  data_root: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D"                               # Root directory for data
+  text_dir: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D/texts"                          # Directory with positive (real) text .txt files
+  negative_text_dir: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D/negative_texts"        # Directory with negative-swapped .txt files
+  max_length: 60                                                                                  # Max token length for CLIP
+  num_other_negatives: 3                                                                          # How many lines to sample from other motions
+  random_seed: 42
+
+model:
+  pretrained_name: "openai/clip-vit-base-patch32"                                                 # Which CLIP to load
+  ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/laion400m_laclip.pt"                 # Which CLIP to load
+
+loss:
+  margin: 0.2
+  alpha: 1.0
+  beta: 1.0
+
+train:
+  batch_size: 32
+  num_workers: 4
+  learning_rate: 1e-5
+  epochs: 5
