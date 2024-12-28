@@ -70,10 +70,6 @@ class HumanML3DDataset(Dataset):
         return lines
 
     def __getitem__(self, idx):
-        """ Return a single anchor from motion 'mid', plus positives from same file,
-            plus negatives from same motion's swapped lines (if any),
-            plus random lines from other motions.
-        """
         mid = self.samples[idx]
 
         # Load all lines for the anchor motion from disk
@@ -97,8 +93,6 @@ class HumanML3DDataset(Dataset):
         negatives_same_motion = self._read_lines(neg_path) if neg_path else []
 
         # Sample negative-other lines from other motions
-        # We pick e.g. 'num_other_negatives' random lines from random other motions
-        # For large datasets, we might just pick 1 random motion id for each negative, or multiple.
         negatives_other_motion = []
         other_motion_ids = [m for m in self.motion_id_list if m != mid]
         if len(other_motion_ids) > 0:
@@ -107,44 +101,44 @@ class HumanML3DDataset(Dataset):
                 other_file = self.motion_id_to_path[rand_mid]
                 other_lines = self._read_lines(other_file)
                 if len(other_lines) > 0:
-                    # pick exactly 1 random line from that other motion
                     negatives_other_motion.append(random.choice(other_lines))
 
-        # Tokenize
-        anchor_tokens = self.tokenizer(anchor_text, 
-                                       truncation=True,
-                                       max_length=self.max_length,
-                                       return_tensors="pt")
+        # Tokenize with SimpleTokenizer format
+        anchor_tokens = {
+            'input_ids': self.tokenizer(anchor_text, context_length=self.max_length),
+            'attention_mask': (self.tokenizer(anchor_text, context_length=self.max_length) != 0).long()
+        }
 
         pos_same_tokens = [
-            self.tokenizer(l,
-                           truncation=True,
-                           max_length=self.max_length,
-                           return_tensors="pt")
+            {
+                'input_ids': self.tokenizer(l, context_length=self.max_length),
+                'attention_mask': (self.tokenizer(l, context_length=self.max_length) != 0).long()
+            }
             for l in positives_same_motion
         ]
+        
         neg_other_tokens = [
-            self.tokenizer(l,
-                           truncation=True,
-                           max_length=self.max_length,
-                           return_tensors="pt")
+            {
+                'input_ids': self.tokenizer(l, context_length=self.max_length),
+                'attention_mask': (self.tokenizer(l, context_length=self.max_length) != 0).long()
+            }
             for l in negatives_other_motion
         ]
+        
         neg_same_tokens = [
-            self.tokenizer(l,
-                           truncation=True,
-                           max_length=self.max_length,
-                           return_tensors="pt")
+            {
+                'input_ids': self.tokenizer(l, context_length=self.max_length),
+                'attention_mask': (self.tokenizer(l, context_length=self.max_length) != 0).long()
+            }
             for l in negatives_same_motion
         ]
 
         return {
-            'anchor_tokens'         : anchor_tokens,
-            'positives_same_motion' : pos_same_tokens,
+            'anchor_tokens': anchor_tokens,
+            'positives_same_motion': pos_same_tokens,
             'negatives_other_motion': neg_other_tokens,
-            'negatives_same_motion' : neg_same_tokens
+            'negatives_same_motion': neg_same_tokens
         }
-
 
 def collate_fn(batch):
     anchors = []

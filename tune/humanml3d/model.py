@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from transformers import CLIPModel
+from transformers import CLIPModel, CLIPConfig
 
 class ClipTextEncoder(nn.Module):
     def __init__(
@@ -15,7 +15,8 @@ class ClipTextEncoder(nn.Module):
         """
         super().__init__()
         # 1) Load base architecture (ensures correct shapes/layers)
-        self.clip_model = CLIPModel.from_pretrained(hf_pretrained_name)
+        config = CLIPConfig.from_pretrained(hf_pretrained_name)
+        self.clip_model = CLIPModel(config)
 
         # 2) Overwrite weights with your .pt, if provided
         if pretrained_ckpt_path is not None:

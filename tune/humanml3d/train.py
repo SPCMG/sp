@@ -164,7 +164,7 @@ def main():
     )
 
     # 6) Model, Loss, Optim
-    model = ClipTextEncoder(config.model.ckpt_path, config.model.pretrained_name).to(device)
+    model = ClipTextEncoder(config.model.pretrained_name, config.model.ckpt_path).to(device)
     loss_fn = HumanML3DLoss(config.loss.margin, config.loss.alpha, config.loss.beta)
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.train.learning_rate)
 
