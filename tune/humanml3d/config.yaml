@@ -16,7 +16,12 @@ loss:
   beta: 1.0
 
 train:
-  batch_size: 32
+  batch_size: 256
   num_workers: 4
   learning_rate: 1e-5
-  epochs: 5
+  weight_decay: 0.5
+  num_epochs: 5  # 35
+
+checkpoint:
+  save_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/checkpoints"
+  save_every: 7                      # Save checkpoint every 'save_every' epochs

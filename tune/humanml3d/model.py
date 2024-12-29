@@ -38,3 +38,5 @@ class ClipTextEncoder(nn.Module):
             input_ids=input_ids,
             attention_mask=attention_mask
         )
+
+        return text_emb

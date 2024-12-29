@@ -8,7 +8,9 @@ from dataset import HumanML3DDataset, collate_fn
 from model import ClipTextEncoder
 from loss import HumanML3DLoss
 from tokenizer import SimpleTokenizer
-
+from setup_wandb import setup_wandb_and_logging
+import wandb
+import os
 
 def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
     model.train()
@@ -121,6 +123,7 @@ def main():
     # 1) Load config
     config = OmegaConf.load("config.yaml")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    run_name = setup_wandb_and_logging(config)
 
     # 2) Initialize tokenizer
     tokenizer = SimpleTokenizer()
@@ -166,22 +169,43 @@ def main():
     # 6) Model, Loss, Optim
     model = ClipTextEncoder(config.model.pretrained_name, config.model.ckpt_path).to(device)
     loss_fn = HumanML3DLoss(config.loss.margin, config.loss.alpha, config.loss.beta)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config.train.learning_rate)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config.train.learning_rate, weight_decay=config.train.weight_decay)
+
+    # 7) Create a run-specific checkpoint directory
+    checkpoint_dir = os.path.join(config.checkpoint.save_path, run_name)
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
     best_val_loss = float('inf')
-    for epoch in range(config.train.epochs):
+    for epoch in range(config.train.num_epochs):
         # Train
         train_loss = train_one_epoch(model, loss_fn, train_loader, optimizer, device)
         # Validate
         val_loss = validate_one_epoch(model, loss_fn, val_loader, device)
 
-        print(f"[Epoch {epoch+1}/{config.train.epochs}] train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
+        print(f"[Epoch {epoch+1}/{config.train.num_epochs}] train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
 
-        # Save checkpoint if best
-        # if val_loss < best_val_loss:
-        #     best_val_loss = val_loss
-        #     torch.save(model.state_dict(), "best_clip_text_encoder.pt")
-        #     print("... best val model saved")
+        # Log to wandb
+        wandb.log({
+            "Epoch": epoch,
+            "Train Loss": train_loss,
+            "Validation Loss": val_loss,
+        })
+
+        # Save checkpoint
+        if epoch % config.checkpoint.save_every == 0:
+            os.makedirs(checkpoint_dir, exist_ok=True)  
+            checkpoint_path = os.path.join(checkpoint_dir, f"finetunelaclip_epoch_{epoch}.pth")
+            torch.save({
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+            }, checkpoint_path)
+            print(f"Saved checkpoint: {checkpoint_path}\n{'-'*50}")
+
+    wandb.finish()
+
 
 if __name__ == "__main__":
     main()
+
+
