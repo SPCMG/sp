@@ -146,7 +146,7 @@ def main():
     train_dataset = HumanML3DDataset(
         text_dir=config.data.text_dir,
         negative_text_dir=config.data.negative_text_dir,
-        split_file=pjoin(config.data.data_root, "train.txt"),
+        split_file=pjoin(config.data.data_root, "train_temp.txt"),
         tokenizer=tokenizer,
         max_length=config.data.max_length,
         num_other_negatives=config.data.num_other_negatives,
@@ -157,7 +157,7 @@ def main():
     val_dataset = HumanML3DDataset(
         text_dir=config.data.text_dir,
         negative_text_dir=config.data.negative_text_dir,
-        split_file=pjoin(config.data.data_root, "val.txt"),
+        split_file=pjoin(config.data.data_root, "val_temp.txt"),
         tokenizer=tokenizer,
         max_length=config.data.max_length,
         num_other_negatives=config.data.num_other_negatives,
