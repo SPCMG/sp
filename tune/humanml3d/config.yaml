@@ -1,14 +1,14 @@
 data:
-  data_root: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D"                               # Root directory for data
-  text_dir: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D/texts"                          # Directory with positive (real) text .txt files
-  negative_text_dir: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D/negative_texts"        # Directory with negative-swapped .txt files
+  data_root: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D"                                      # Root directory for data
+  text_dir: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/texts"                                 # Directory with positive (real) text .txt files
+  negative_text_dir: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/neg_texts"                    # Directory with negative-swapped .txt files
   max_length: 60                                                                                  # Max token length for CLIP
   num_other_negatives: 3                                                                          # How many lines to sample from other motions
   random_seed: 42
 
 model:
   pretrained_name: "openai/clip-vit-base-patch32"                                                 # Which CLIP to load
-  ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/laion400m_laclip.pt"                 # Which CLIP to load
+  ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/laion400m_laclip.pt"                 # Which checkpoint to load
 
 loss:
   margin: 0.2
@@ -16,12 +16,14 @@ loss:
   beta: 1.0
 
 train:
-  batch_size: 256
-  num_workers: 4
+  batch_size: 32
+  num_workers: 8
   learning_rate: 1e-5
-  weight_decay: 0.5
-  num_epochs: 5  # 35
+  weight_decay: 0.01
+  num_epochs: 50
+  scheduler_factor: 0.5
+  scheduler_patience: 5
 
 checkpoint:
   save_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/checkpoints"
-  save_every: 7                      # Save checkpoint every 'save_every' epochs
+  save_every: 50                                                                                   # Save checkpoint every 'save_every' epochs

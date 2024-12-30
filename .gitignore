@@ -168,3 +168,5 @@ deprecated/
 logs/
 checkpoints/
 wandb/
+saved_logs/
+*.pt

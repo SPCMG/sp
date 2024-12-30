@@ -208,7 +208,7 @@ def main():
         })
 
         # 8) Save checkpoint
-        if epoch % 50 == 0:
+        if epoch % cfg.checkpoint.save_every == 0:
             os.makedirs(checkpoint_dir, exist_ok=True)  
             checkpoint_path = os.path.join(checkpoint_dir, f"motionclipmodel_epoch_{epoch}.pth")
             torch.save({

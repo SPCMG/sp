@@ -1,7 +1,5 @@
 import os
-import glob
 import random
-import torch
 from torch.utils.data import Dataset
 
 class HumanML3DDataset(Dataset):
@@ -9,7 +7,7 @@ class HumanML3DDataset(Dataset):
         self,
         text_dir,
         negative_text_dir,
-        split_file,          # <-- new param: path to train.txt or val.txt
+        split_file,         
         tokenizer,
         max_length=77,
         num_other_negatives=3,

@@ -1,7 +1,6 @@
-import torch
-import torch.optim as optim
+import torch 
+from torch.optim import AdamW, lr_scheduler
 from torch.utils.data import DataLoader
-from transformers import CLIPTokenizer
 from os.path import join as pjoin
 from omegaconf import OmegaConf
 from dataset import HumanML3DDataset, collate_fn
@@ -11,6 +10,7 @@ from tokenizer import SimpleTokenizer
 from setup_wandb import setup_wandb_and_logging
 import wandb
 import os
+import argparse
 
 def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
     model.train()
@@ -123,6 +123,20 @@ def main():
     # 1) Load config
     config = OmegaConf.load("config.yaml")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--weight_decay", type=float, default=config.train.weight_decay, help="Weight decay")
+    parser.add_argument("--learning_rate", type=float, default=config.train.learning_rate, help="Learning rate")
+    parser.add_argument("--scheduler_factor", type=float, default=config.train.scheduler_factor, help="Scheduler factor")
+    args = parser.parse_args()
+
+    # Update config with user-provided values
+    config.train.weight_decay = args.weight_decay
+    config.train.learning_rate = args.learning_rate
+    config.train.scheduler_factor = args.scheduler_factor
+
+    # Initialize wandb
     run_name = setup_wandb_and_logging(config)
 
     # 2) Initialize tokenizer
@@ -156,39 +170,45 @@ def main():
         batch_size=config.train.batch_size,
         shuffle=True,
         num_workers=config.train.num_workers,
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
+        drop_last=True
     )
     val_loader = DataLoader(
         val_dataset,
         batch_size=config.train.batch_size,
         shuffle=False, 
         num_workers=config.train.num_workers,
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
+        drop_last=True
     )
 
     # 6) Model, Loss, Optim
     model = ClipTextEncoder(config.model.pretrained_name, config.model.ckpt_path).to(device)
     loss_fn = HumanML3DLoss(config.loss.margin, config.loss.alpha, config.loss.beta)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=config.train.learning_rate, weight_decay=config.train.weight_decay)
+    optimizer = AdamW(model.parameters(), lr=config.train.learning_rate, weight_decay=config.train.weight_decay)
+    scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.train.scheduler_factor, patience=config.train.scheduler_patience, verbose=True)
 
     # 7) Create a run-specific checkpoint directory
     checkpoint_dir = os.path.join(config.checkpoint.save_path, run_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    best_val_loss = float('inf')
     for epoch in range(config.train.num_epochs):
         # Train
         train_loss = train_one_epoch(model, loss_fn, train_loader, optimizer, device)
         # Validate
         val_loss = validate_one_epoch(model, loss_fn, val_loader, device)
 
-        print(f"[Epoch {epoch+1}/{config.train.num_epochs}] train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
-
+        # Update the learning rate based on validation loss
+        scheduler.step(val_loss)
+        
+        print(f"[Epoch {epoch+1}/{config.train.num_epochs}] train_loss={train_loss:.4f}, val_loss={val_loss:.4f}, lr={optimizer.param_groups[0]['lr']:.6f}")
+        
         # Log to wandb
         wandb.log({
             "Epoch": epoch,
             "Train Loss": train_loss,
             "Validation Loss": val_loss,
+            "Learning Rate": optimizer.param_groups[0]['lr']
         })
 
         # Save checkpoint

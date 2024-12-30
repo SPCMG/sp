@@ -34,4 +34,4 @@ loss:
 
 checkpoint:
   save_path: "./checkpoints"          # Directory to save model checkpoints
-  save_every: 30                      # Save checkpoint every 'save_every' epochs
+  save_every: 50                      # Save checkpoint every 'save_every' epochs
