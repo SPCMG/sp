@@ -9,6 +9,7 @@ data:
 model:
   pretrained_name: "openai/clip-vit-base-patch32"                                                 # Which CLIP to load
   ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/laion400m_laclip.pt"                 # Which checkpoint to load
+  dropout: 0.1
 
 loss:
   margin: 0.2
@@ -18,12 +19,12 @@ loss:
 train:
   batch_size: 32
   num_workers: 8
-  learning_rate: 1e-5
+  learning_rate: 5e-5
   weight_decay: 0.01
-  num_epochs: 35
+  num_epochs: 16
   scheduler_factor: 0.5
   scheduler_patience: 5
 
 checkpoint:
-  save_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/checkpoints"
-  save_every: 35                                                                                   # Save checkpoint every 'save_every' epochs
+  save_path: "/home/jiaxu/projects/sp-motionclip/tune/motionlaclip_dropout"
+  save_every: 1                                                                                   # Save checkpoint every 'save_every' epochs

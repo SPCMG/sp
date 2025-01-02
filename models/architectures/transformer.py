@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, num_layers=4, num_heads=8, ff_size=1024, dropout=0.1):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=4, num_heads=8, ff_size=1024, dropout=0.1, activation="gelu"):
         """
         Transformer-based Motion Encoder
         Args:
@@ -23,7 +23,7 @@ class TransformerEncoder(nn.Module):
                 nhead=num_heads,
                 dim_feedforward=ff_size,
                 dropout=dropout,
-                activation="gelu"
+                activation=activation
             ),
             num_layers=num_layers
         )
@@ -48,7 +48,7 @@ class TransformerEncoder(nn.Module):
         x = self.input_proj(inputs)  # (batch_size, seq_len, hidden_size)
 
         # Add positional encoding
-        x = x + self.positional_encoding(torch.arange(seq_len).to(inputs.device))
+        x = x + self.positional_encoding(torch.arange(seq_len, device=inputs.device))
 
         # Transpose for transformer: (seq_len, batch_size, hidden_size)
         x = x.permute(1, 0, 2)
@@ -82,10 +82,9 @@ class PositionalEncoding(nn.Module):
         self.pe = self.pe.unsqueeze(0)  # Shape (1, max_len, d_model)
 
     def forward(self, pos):
-        return self.pe[:, pos, :]
+        return self.pe[:, pos, :].to(pos.device)
 
 
-# Example usage
 if __name__ == "__main__":
     batch_size = 16
     seq_len = 200

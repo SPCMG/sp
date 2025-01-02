@@ -16,7 +16,7 @@ def setup_wandb_and_logging(cfg):
     # 1) Generate a descriptive run name
     #    E.g., include date/time, or major hyperparams
     run_name = (
-        f"FinetuneLaCLIP_"
+        f"BEST_dropout_coslr_FinetuneLaCLIP_"
         f"DS_HumanML3D_"
         f"LR_{cfg.train.learning_rate}_"
         f"WD_{cfg.train.weight_decay}_"

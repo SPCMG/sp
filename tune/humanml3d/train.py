@@ -146,10 +146,11 @@ def main():
     train_dataset = HumanML3DDataset(
         text_dir=config.data.text_dir,
         negative_text_dir=config.data.negative_text_dir,
-        split_file=pjoin(config.data.data_root, "train_temp.txt"),
+        split_file=pjoin(config.data.data_root, "train.txt"),
         tokenizer=tokenizer,
         max_length=config.data.max_length,
         num_other_negatives=config.data.num_other_negatives,
+        max_text_length=config.data.max_text_length,
         random_seed=config.data.random_seed
     )
 
@@ -157,10 +158,11 @@ def main():
     val_dataset = HumanML3DDataset(
         text_dir=config.data.text_dir,
         negative_text_dir=config.data.negative_text_dir,
-        split_file=pjoin(config.data.data_root, "val_temp.txt"),
+        split_file=pjoin(config.data.data_root, "val.txt"),
         tokenizer=tokenizer,
         max_length=config.data.max_length,
         num_other_negatives=config.data.num_other_negatives,
+        max_text_length=config.data.max_text_length,
         random_seed=config.data.random_seed
     )
 
@@ -183,10 +185,11 @@ def main():
     )
 
     # 6) Model, Loss, Optim
-    model = ClipTextEncoder(config.model.pretrained_name, config.model.ckpt_path).to(device)
+    model = ClipTextEncoder(config.model.pretrained_name, config.model.ckpt_path, config.model.dropout).to(device)
     loss_fn = HumanML3DLoss(config.loss.margin, config.loss.alpha, config.loss.beta)
     optimizer = AdamW(model.parameters(), lr=config.train.learning_rate, weight_decay=config.train.weight_decay)
-    scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.train.scheduler_factor, patience=config.train.scheduler_patience, verbose=True)
+    # scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.train.scheduler_factor, patience=config.train.scheduler_patience, verbose=True)
+    scheduler = lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=8, T_mult=1, eta_min=1e-7, last_epoch=-1)
 
     # 7) Create a run-specific checkpoint directory
     checkpoint_dir = os.path.join(config.checkpoint.save_path, run_name)

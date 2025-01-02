@@ -1,8 +1,9 @@
-from losses import ContrastiveLoss
-from architectures.transformer import TransformerEncoder
-from architectures.mamba import MambaEncoder
+from models.losses import ContrastiveLoss
+from models.architectures.transformer import TransformerEncoder
+from models.architectures.mamba import MambaEncoder
 import clip
 import torch
+import torch.nn as nn
 
 class MotionTextModel(nn.Module):
     def __init__(self, config):
@@ -14,7 +15,7 @@ class MotionTextModel(nn.Module):
         # Initialize the text encoder
         if self.text_encoder_type == "clip":
             self.clip_model, _ = clip.load(config.model.clip_model_name, device=self.device, jit=False)
-            self.text_encoder = self.clip_model.encode_text
+            self.text_encoder = self.clip_model  # Store the entire CLIP model
         elif self.text_encoder_type == "laclip":
             self.text_encoder = torch.load(config.model.laclip_ckpt_path, map_location=self.device)
         elif self.text_encoder_type == "motionlaclip":
@@ -30,7 +31,8 @@ class MotionTextModel(nn.Module):
         if self.motion_encoder_type == "transformer":
             self.motion_encoder = TransformerEncoder(
                 input_size=config.data.n_feats,
-                latent_dim=config.model.latent_dim,
+                hidden_size=config.model.latent_dim,
+                output_size=config.model.latent_dim,
                 num_layers=config.model.num_transformer_layers,
                 num_heads=config.model.num_heads,
                 ff_size=config.model.ff_size,
@@ -55,7 +57,7 @@ class MotionTextModel(nn.Module):
         # Tokenize and encode text inputs
         if self.text_encoder_type == "clip":
             text_inputs = clip.tokenize(text_inputs).to(self.device)
-            text_embeds = self.text_encoder(text_inputs).float()
+            text_embeds = self.text_encoder.encode_text(text_inputs).float()  # Use encode_text explicitly
         else:
             text_embeds = self.text_encoder(text_inputs)
 

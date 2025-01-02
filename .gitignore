@@ -170,3 +170,4 @@ checkpoints/
 wandb/
 saved_logs/
 *.pt
+*.pth

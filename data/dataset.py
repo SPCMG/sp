@@ -1,181 +1,112 @@
+import os
 import random
 import numpy as np
-from os.path import join as pjoin
+import torch
 from torch.utils.data import Dataset
-from tqdm import tqdm
-import json
-from itertools import permutations
-import os
+from utils.text_process import read_lines
 
-class HumanML3D(Dataset):
-    def __init__(self, opt, split="train"):
-        """
-        Args:
-            opt: OmegaConf DictConfig with fields like data_root, motion_dir, etc.
-            split: 'train', 'val', or 'test'.
-        """
-        self.opt = opt
-        self.split = split
-        self.max_text_length = opt.max_text_length
+class MotionTripleDataset(Dataset):
+    """
+    Returns a triple for each motion:
+      (motion_tensor, pos_caption, neg_caption)
 
-        # Load normalization parameters
-        self.mean = np.load(pjoin(opt.data_root, "Mean.npy"))
-        self.std = np.load(pjoin(opt.data_root, "Std.npy"))
+    - 'pos_caption': a correct/matching caption (label=0)
+    - 'neg_caption': a custom negative line (label=1), e.g. swapped actions
+    """
 
-        self.min_motion_length = opt.min_motion_length
-        self.max_motion_length = opt.max_motion_length
-        self.n_joints = opt.n_joints
-        self.n_feats = opt.n_feats
+    def __init__(
+        self,
+        motion_dir,
+        text_dir,
+        negative_text_dir,
+        split_file,
+        min_motion_len=40,
+        max_motion_len=200,
+        max_text_length=60,
+        random_seed=42
+    ):
+        super().__init__()
+        random.seed(random_seed)
 
-        # Load file list
-        split_file = pjoin(opt.data_root, f"{split}.txt")
-        with open(split_file, "r") as f:
-            self.data_files = [line.strip() for line in f.readlines()]
+        self.motion_dir = motion_dir
+        self.text_dir = text_dir
+        self.negative_text_dir = negative_text_dir
+        self.min_motion_len = min_motion_len
+        self.max_motion_len = max_motion_len
+        self.max_text_length = max_text_length
 
-        # Instead of loading all motion/text data now,
-        # just build a small dictionary that references paths or IDs.
-        self.data_dict = self._build_index()
+        # Read the IDs from the split file
+        with open(split_file, 'r') as f:
+            all_ids = [line.strip() for line in f if line.strip()]
 
-    def _build_index(self):
-        data_index = {}
-        for name in tqdm(self.data_files, desc=f"Indexing {self.split} data"):
-            motion_path = pjoin(self.opt.motion_dir, f"{name}.npy")
-            text_path = pjoin(self.opt.text_dir, f"{name}.txt")
-            event_text_dir = self.opt.event_text_dir
-            
-            # 1) Check if motion file exists
-            if not os.path.exists(motion_path):
-                # print(f"Skipping {name}: .npy file missing at {motion_path}")
+        self.samples = []
+        skipped = 0
+        for mid in all_ids:
+            motion_path = os.path.join(motion_dir, f"{mid}.npy")
+            if not os.path.isfile(motion_path):
                 continue
 
-            # 2) Filter out-of-range
-            motion_temp = np.load(motion_path, mmap_mode='r')
-            T = len(motion_temp)
-            if T < self.min_motion_length or T > self.max_motion_length:
-                # print(f"Skipping {name}: Length {T} outside range [{self.min_motion_length}, {self.max_motion_length}]")
+            # Check motion length
+            motion_data = np.load(motion_path)
+            length = motion_data.shape[0]
+            if not (self.min_motion_len <= length <= self.max_motion_len):
+                skipped += 1
                 continue
 
-            # 3) If we get here, it's a valid motion => we store it in the index
-            data_index[name] = {
+            # Read the positive lines
+            pos_path = os.path.join(text_dir, f"{mid}.txt")
+            pos_lines = read_lines(pos_path, self.max_text_length)
+            if len(pos_lines) == 0:
+                skipped += 1
+                continue
+
+            # Read the custom negative lines
+            neg_path = os.path.join(negative_text_dir, f"{mid}.txt")
+            neg_lines = read_lines(neg_path, self.max_text_length)
+            if len(neg_lines) == 0:
+                neg_lines = ["(no negative lines)"]
+
+            # We choose exactly ONE positive line and ONE negative line
+            # per motion to create a triple.
+            pos_line = random.choice(pos_lines)
+            neg_line = random.choice(neg_lines)
+
+            self.samples.append({
                 "motion_path": motion_path,
-                "text_path": text_path,
-                "event_text_dir": event_text_dir,
-                "motion_id": name
-            }
+                "pos_text": pos_line,
+                "neg_text": neg_line
+            })
 
-        print(f"Kept {len(data_index)} items for split {self.split}")
-        return data_index
+        print(f"[MotionTripleDataset] Loaded {len(self.samples)} samples total.")
+        print(f"  Skipped {skipped} motions out of [min={self.min_motion_len}, max={self.max_motion_len}] range.")
 
     def __len__(self):
-        return len(self.data_dict)
+        return len(self.samples)
 
     def __getitem__(self, idx):
-        # 1) Retrieve paths/info for this item
-        key = list(self.data_dict.keys())[idx]
-        item_info = self.data_dict[key]
+        item = self.samples[idx]
+        motion_data = np.load(item["motion_path"])  # shape (T, D)
+        motion_tensor = torch.from_numpy(motion_data).float()
+        pos_text = item["pos_text"]
+        neg_text = item["neg_text"]
+        return motion_tensor, pos_text, neg_text
 
-        motion_path = item_info["motion_path"]
-        text_path = item_info["text_path"]
-        event_text_dir = item_info["event_text_dir"]
-        motion_id = item_info["motion_id"]
 
-        # 2) Load the motion .npy (only for this sample!)
-        motion_raw = np.load(motion_path, mmap_mode='r')
+def collate_fn(batch):
+    """
+    Given a list of (motion_tensor, pos_text, neg_text),
+    produce:
+      motions -> List of length B, each a (T, D) tensor
+      pos_texts -> list of length B (strings)
+      neg_texts -> list of length B (strings)
+    """
+    motions = []
+    pos_texts = []
+    neg_texts = []
 
-        # 3) Load captions from the text file
-        with open(text_path, "r") as f:
-            captions = [line.split("#")[0].strip() for line in f if line.strip()]
-            captions = [self._truncate_text(cap, self.max_text_length) for cap in captions]
+    for (motion_tensor, pos_str, neg_str) in batch:
+        motions.append(motion_tensor)
+        pos_texts.append(pos_str)
+        neg_texts.append(neg_str)
 
-        # 4) For each caption, load event JSON and build permutations
-        shuffled_event_texts = []
-        for i, cap in enumerate(captions):
-            event_path = pjoin(event_text_dir, f"{motion_id}_{i}.json")
-            try:
-                with open(event_path, "r") as fjson:
-                    event_data = json.load(fjson)
-                    events = event_data.get("events", [])
-                    original_text = " ".join(events).lower()
-
-                    # Create permutations
-                    num_permutations = min(len(events), 3)
-                    all_permutations = list(permutations(events, num_permutations))
-                    random.shuffle(all_permutations)
-
-                    # Exclude the original order
-                    shuffled_texts = [
-                        " ".join(perm).lower() for perm in all_permutations
-                        if " ".join(perm).lower() != original_text
-                    ]
-                    shuffled_texts = [self._truncate_text(text, self.max_text_length) for text in shuffled_texts]
-                    shuffled_event_texts.extend(shuffled_texts)
-            except FileNotFoundError:
-                pass
-
-        # 5) Truncate/pad shuffled event texts
-        # shuffled_event_texts = shuffled_event_texts[:5]
-        # if len(shuffled_event_texts) < 5:
-        #     shuffled_event_texts += [""] * (5 - len(shuffled_event_texts))
-
-        # 6) Normalize motion => (motion_raw - mean) / std
-        motion_raw = (motion_raw - self.mean) / self.std
-
-        # 7) Pad or truncate motion
-        motion, mask, length = self._pad_or_truncate_motion(motion_raw)
-
-        # 8) Return sample
-        sample = {
-            "x": motion,        # [max_motion_length, 263]
-            "mask": mask,       # [max_motion_length] bool
-            "lengths": length,
-            "captions": captions,
-            "shuffled_event_texts": shuffled_event_texts,
-            "motion_id": motion_id
-        }
-        return sample
-
-    def _pad_or_truncate_motion(self, motion_raw):
-        T = motion_raw.shape[0]
-        D = motion_raw.shape[1]
-        max_len = self.max_motion_length
-
-        if T > max_len:
-            motion_raw = motion_raw[:max_len]
-            T = max_len
-
-        if T < max_len:
-            pad = np.zeros((max_len - T, D), dtype=motion_raw.dtype)
-            motion_padded = np.concatenate([motion_raw, pad], axis=0)
-        else:
-            motion_padded = motion_raw
-
-        mask = np.zeros((max_len,), dtype=bool)
-        mask[:T] = True
-
-        return motion_padded, mask, T
-    
-    def _truncate_text(self, text, max_length=77):
-        """
-        Truncate a text string to the specified maximum length.
-        """
-        tokenized = text.split()
-        if len(tokenized) > max_length:
-            return " ".join(tokenized[:max_length])
-        return text
-
-# Default collate_fn
-from torch.utils.data._utils.collate import default_collate
-
-def custom_collate_fn(batch):
-    # Separate `captions` and other fields
-    captions = [item["captions"] for item in batch]
-    shuffled_event_texts = [item["shuffled_event_texts"] for item in batch]
-
-    # Use default_collate for the rest
-    other_data = default_collate([{k: v for k, v in item.items() if k not in ["captions", "shuffled_event_texts"]} for item in batch])
-
-    # Add captions and shuffled_event_texts back
-    other_data["captions"] = captions
-    other_data["shuffled_event_texts"] = shuffled_event_texts
-
-    return other_data
+    return motions, pos_texts, neg_texts

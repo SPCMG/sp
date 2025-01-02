@@ -67,7 +67,6 @@ class MambaEncoder(nn.Module):
         return output
 
 
-# Example usage
 if __name__ == "__main__":
     batch_size = 16
     seq_len = 200

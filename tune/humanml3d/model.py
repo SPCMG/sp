@@ -6,7 +6,8 @@ class ClipTextEncoder(nn.Module):
     def __init__(
         self,
         hf_pretrained_name="openai/clip-vit-base-patch32",
-        pretrained_ckpt_path=None
+        pretrained_ckpt_path=None,
+        dropout=0.1
     ):
         """
         hf_pretrained_name: Which Hugging Face CLIP variant to load for the skeleton architecture.
@@ -30,6 +31,9 @@ class ClipTextEncoder(nn.Module):
         for param in self.clip_model.visual_projection.parameters():
             param.requires_grad = False
 
+        # Add dropout layer
+        self.dropout = nn.Dropout(dropout)
+
     def forward(self, input_ids, attention_mask):
         """
         Returns text embeddings from the text encoder.
@@ -38,5 +42,8 @@ class ClipTextEncoder(nn.Module):
             input_ids=input_ids,
             attention_mask=attention_mask
         )
+
+        # Apply dropout to the text embeddings
+        text_emb = self.dropout(text_emb)
 
         return text_emb
