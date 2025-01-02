@@ -4,6 +4,7 @@ from models.architectures.mamba import MambaEncoder
 import clip
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from tune.humanml3d.tokenizer import SimpleTokenizer
 
 class MotionTextModel(nn.Module):
@@ -69,6 +70,9 @@ class MotionTextModel(nn.Module):
 
         # Encode motion inputs
         motion_embeds = self.motion_encoder(motion_inputs)
+
+        text_embeds = F.normalize(text_embeds, p=2, dim=1)
+        motion_embeds = F.normalize(motion_embeds, p=2, dim=1)
 
         # Compute the loss
         loss = self.loss(text_embeds, motion_embeds, labels)

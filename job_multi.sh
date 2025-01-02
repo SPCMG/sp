@@ -1,9 +1,11 @@
 #!/bin/bash
 
 # Define parameters
-learning_rates=(1e-4)
+learning_rates=(5e-5)
 text_encoders=("clip" "laclip" "motionlaclip")
 motion_encoders=("transformer" "mamba")
+# text_encoders=("clip")
+# motion_encoders=("transformer" "mamba")
 
 # Loop through all combinations of text_encoder, motion_encoder, and learning_rate
 for lr in "${learning_rates[@]}"; do

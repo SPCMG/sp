@@ -4,6 +4,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from omegaconf import OmegaConf
 import torch.nn.functional as F
+from torch.nn.utils import rnn, clip_grad_norm_
 
 from data.dataset import MotionTripleDataset, collate_fn
 from models.model import MotionTextModel
@@ -26,7 +27,7 @@ def train_one_epoch(model, dataloader, optimizer, device):
         num_batches += 1
 
         # Convert motion list to padded tensor
-        motions = torch.nn.utils.rnn.pad_sequence(motions, batch_first=True).to(device)
+        motions = rnn.pad_sequence(motions, batch_first=True).to(device)
 
         # Positive pair loss
         labels_pos = torch.zeros(len(motions), device=device)
@@ -56,6 +57,7 @@ def train_one_epoch(model, dataloader, optimizer, device):
         # Backprop and optimize
         optimizer.zero_grad()
         loss_total.backward()
+        clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         total_loss += loss_total.item()
@@ -78,7 +80,7 @@ def validate_one_epoch(model, dataloader, device):
             num_batches += 1
 
             # Convert motion list to padded tensor
-            motions = torch.nn.utils.rnn.pad_sequence(motions, batch_first=True).to(device)
+            motions = rnn.pad_sequence(motions, batch_first=True).to(device)
 
             # Positive pair loss
             labels_pos = torch.zeros(len(motions), device=device)
@@ -178,7 +180,7 @@ def main():
     model = MotionTextModel(config).to(device)
 
     # 6) Optimizer
-    optimizer = optim.Adam(model.motion_encoder.parameters(), lr=config.train.learning_rate)
+    optimizer = optim.AdamW(model.motion_encoder.parameters(), lr=config.train.learning_rate)
 
     # 7) Create a run-specific checkpoint directory
     checkpoint_dir = os.path.join(config.checkpoint.save_path, run_name)
