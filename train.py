@@ -38,9 +38,12 @@ def train_one_epoch(model, dataloader, optimizer, device):
         loss_neg_random = model(pos_texts, random_motions, labels_neg)
 
         # Custom negative loss
-        valid_neg_texts = [txt for txt in neg_texts if txt != "(no negative lines)"]
-        if valid_neg_texts:
-            loss_neg_custom = model(valid_neg_texts, motions[:len(valid_neg_texts)], labels_neg[:len(valid_neg_texts)])
+        valid_pairs = [(m, n, l) for m, n, l in zip(motions, neg_texts, labels_neg) if n != "(no negative lines)"]
+
+        if valid_pairs:
+            valid_motions, valid_neg_texts, valid_labels = zip(*valid_pairs)
+            valid_labels = torch.tensor(valid_labels, device=device)
+            loss_neg_custom = model(list(valid_neg_texts), list(valid_motions), valid_labels)
         else:
             loss_neg_custom = 0.0
 
@@ -84,11 +87,14 @@ def val_one_epoch(model, dataloader, device):
             random_motions = motions[idx_shifted]
             labels_neg = torch.ones(len(motions), device=device)
             loss_neg_random = model(pos_texts, random_motions, labels_neg)
-
+        
             # Custom negative loss
-            valid_neg_texts = [txt for txt in neg_texts if txt != "(no negative lines)"]
-            if valid_neg_texts:
-                loss_neg_custom = model(valid_neg_texts, motions[:len(valid_neg_texts)], labels_neg[:len(valid_neg_texts)])
+            valid_pairs = [(m, n, l) for m, n, l in zip(motions, neg_texts, labels_neg) if n != "(no negative lines)"]
+
+            if valid_pairs:
+                valid_motions, valid_neg_texts, valid_labels = zip(*valid_pairs)
+                valid_labels = torch.tensor(valid_labels, device=device)
+                loss_neg_custom = model(list(valid_neg_texts), list(valid_motions), valid_labels)
             else:
                 loss_neg_custom = 0.0
 
