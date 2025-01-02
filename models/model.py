@@ -4,24 +4,33 @@ from models.architectures.mamba import MambaEncoder
 import clip
 import torch
 import torch.nn as nn
+from tune.humanml3d.tokenizer import SimpleTokenizer
 
 class MotionTextModel(nn.Module):
     def __init__(self, config):
         super(MotionTextModel, self).__init__()
         self.text_encoder_type = config.model.text_encoder
         self.motion_encoder_type = config.model.motion_encoder
+        self.max_text_length = config.data.max_text_length
         self.device = config.device
 
         # Initialize the text encoder
+        self.clip_model, _ = clip.load(config.model.clip_model_name, device=self.device, jit=False)
         if self.text_encoder_type == "clip":
-            self.clip_model, _ = clip.load(config.model.clip_model_name, device=self.device, jit=False)
-            self.text_encoder = self.clip_model  # Store the entire CLIP model
+            self.text_encoder = self.clip_model
         elif self.text_encoder_type == "laclip":
-            self.text_encoder = torch.load(config.model.laclip_ckpt_path, map_location=self.device)
+            # Load the LaCLIP weights from the checkpoint
+            checkpoint = torch.load(config.model.laclip_ckpt_path, map_location=self.device)
+            self.clip_model.load_state_dict(checkpoint["state_dict"], strict=False)
+            self.text_encoder = self.clip_model
         elif self.text_encoder_type == "motionlaclip":
-            self.text_encoder = torch.load(config.model.motionlaclip_ckpt_path, map_location=self.device)
+            # Load the MotionLaCLIP weights from the checkpoint
+            checkpoint = torch.load(config.model.motionlaclip_ckpt_path, map_location=self.device)
+            self.clip_model.load_state_dict(checkpoint, strict=False)
+            self.text_encoder = self.clip_model
         else:
             raise ValueError("Unsupported text encoder type")
+       
 
         # Freeze the text encoder parameters
         for param in self.text_encoder.parameters():
@@ -55,11 +64,8 @@ class MotionTextModel(nn.Module):
 
     def forward(self, text_inputs, motion_inputs, labels):
         # Tokenize and encode text inputs
-        if self.text_encoder_type == "clip":
-            text_inputs = clip.tokenize(text_inputs).to(self.device)
-            text_embeds = self.text_encoder.encode_text(text_inputs).float()  # Use encode_text explicitly
-        else:
-            text_embeds = self.text_encoder(text_inputs)
+        text_inputs = clip.tokenize(text_inputs).to(self.device)
+        text_embeds = self.text_encoder.encode_text(text_inputs).float()  # Use encode_text explicitly
 
         # Encode motion inputs
         motion_embeds = self.motion_encoder(motion_inputs)

@@ -7,6 +7,9 @@ import torch.nn.functional as F
 
 from data.dataset import MotionTripleDataset, collate_fn
 from models.model import MotionTextModel
+from utils.logging import setup_wandb_and_logging
+import wandb
+import argparse
 
 def train_one_epoch(model, dataloader, optimizer, device):
     """
@@ -16,7 +19,6 @@ def train_one_epoch(model, dataloader, optimizer, device):
     model.train()
     total_loss = 0.0
     num_batches = 0
-    print("Training...")
 
     for motions, pos_texts, neg_texts in dataloader:
         if len(motions) == 0:
@@ -42,8 +44,9 @@ def train_one_epoch(model, dataloader, optimizer, device):
 
         if valid_pairs:
             valid_motions, valid_neg_texts, valid_labels = zip(*valid_pairs)
+            valid_motions = torch.stack(valid_motions).to(device)
             valid_labels = torch.tensor(valid_labels, device=device)
-            loss_neg_custom = model(list(valid_neg_texts), list(valid_motions), valid_labels)
+            loss_neg_custom = model(list(valid_neg_texts), valid_motions, valid_labels)
         else:
             loss_neg_custom = 0.0
 
@@ -59,7 +62,7 @@ def train_one_epoch(model, dataloader, optimizer, device):
 
     return total_loss / num_batches if num_batches > 0 else 0.0
 
-def val_one_epoch(model, dataloader, device):
+def validate_one_epoch(model, dataloader, device):
     """
     Evaluate the model (no gradient updates).
     Returns the average validation loss.
@@ -93,8 +96,9 @@ def val_one_epoch(model, dataloader, device):
 
             if valid_pairs:
                 valid_motions, valid_neg_texts, valid_labels = zip(*valid_pairs)
+                valid_motions = torch.stack(valid_motions).to(device)
                 valid_labels = torch.tensor(valid_labels, device=device)
-                loss_neg_custom = model(list(valid_neg_texts), list(valid_motions), valid_labels)
+                loss_neg_custom = model(list(valid_neg_texts), valid_motions, valid_labels)
             else:
                 loss_neg_custom = 0.0
 
@@ -106,18 +110,31 @@ def val_one_epoch(model, dataloader, device):
 
 def main():
     """
-    Main training loop:
-      - Loads config.yaml
-      - Creates dataset & dataloader
-      - Builds model
-      - Runs train/val epochs
-      - Logs losses
+    Main training loop with user inputs for motion_encoder, text_encoder, and learning_rate.
     """
     # 1) Load config
     config = OmegaConf.load("configs/config.yaml")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # 2) Create Datasets
+    # 2) Parse user inputs with config defaults
+    parser = argparse.ArgumentParser(description="Train Text-Motion Matching Model")
+    parser.add_argument("--motion_encoder", type=str, default=config.model.motion_encoder,
+                        help="Type of motion encoder (e.g., transformer, mamba)")
+    parser.add_argument("--text_encoder", type=str, default=config.model.text_encoder,
+                        help="Type of text encoder (e.g., clip, laclip, motionlaclip)")
+    parser.add_argument("--learning_rate", type=float, default=config.train.learning_rate,
+                        help="Learning rate for the optimizer")
+    args = parser.parse_args()
+
+    # Override config values with user inputs
+    config.model.motion_encoder = args.motion_encoder
+    config.model.text_encoder = args.text_encoder
+    config.train.learning_rate = args.learning_rate
+
+    # Initialize wandb
+    run_name = setup_wandb_and_logging(config)
+
+    # 3) Create Datasets
     train_dataset = MotionTripleDataset(
         motion_dir=config.data.motion_dir,
         text_dir=config.data.text_dir,
@@ -138,7 +155,7 @@ def main():
         random_seed=config.data.random_seed
     )
 
-    # 3) DataLoaders
+    # 4) DataLoaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=config.train.batch_size,
@@ -157,30 +174,44 @@ def main():
         drop_last=True
     )
 
-    # 4) Initialize Model
+    # 5) Initialize Model
     model = MotionTextModel(config).to(device)
 
-    # 5) Optimizer (only motion_encoder is trainable if text encoder is frozen)
+    # 6) Optimizer
     optimizer = optim.Adam(model.motion_encoder.parameters(), lr=config.train.learning_rate)
 
-    # 6) Training Loop
+    # 7) Create a run-specific checkpoint directory
+    checkpoint_dir = os.path.join(config.checkpoint.save_path, run_name)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    # 8) Training Loop
     best_val_loss = float("inf")
     for epoch in range(config.train.num_epochs):
         # Train
         train_loss = train_one_epoch(model, train_loader, optimizer, device)
         # Validate
-        val_loss = val_one_epoch(model, val_loader, device)
+        val_loss = validate_one_epoch(model, val_loader, device)
 
         # Print progress
         print(f"[Epoch {epoch+1}/{config.train.num_epochs}] "
               f"train_loss={train_loss:.4f}, val_loss={val_loss:.4f}")
+        
+        # Log to wandb
+        wandb.log({
+            "Epoch": epoch,
+            "Train Loss": train_loss,
+            "Validation Loss": val_loss,
+        })
 
-        # (Optional) Save best model
-        # if val_loss < best_val_loss:
-        #     best_val_loss = val_loss
-        #     save_path = os.path.join(config.checkpoint.save_dir, "best_model.pth")
-        #     torch.save(model.state_dict(), save_path)
-        #     print(f"  [*] Saved best model to {save_path}")
+        # Save best model
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            save_path = os.path.join(checkpoint_dir, f"best_model_epoch_{epoch+1}.pth")
+            torch.save(model.state_dict(), save_path)
+            print(f"  [*] Saved best model to {save_path}")
+
+    wandb.finish()
+
 
 if __name__ == "__main__":
     main()

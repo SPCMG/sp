@@ -1,10 +1,14 @@
 device: "cuda"                                                                      # Use "cpu" if no GPU is available
 
 data:
-  data_root: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D"                        # Root directory for data
-  motion_dir: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D/new_joint_vecs"        # Directory containing motion .npy files
-  text_dir: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D/texts"                   # Directory containing text .txt files
-  negative_text_dir: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D/neg_texts"      # Directory containing event text .json files
+  # data_root: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D"                        # Root directory for data
+  # motion_dir: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D/new_joint_vecs"        # Directory containing motion .npy files
+  # text_dir: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D/texts"                   # Directory containing text .txt files
+  # negative_text_dir: "/home/jiaxu/projects/sp-motionclip/dataset/HumanML3D/neg_texts"      # Directory containing event text .json files
+  data_root: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D"                        # Root directory for data
+  motion_dir: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/new_joint_vecs"        # Directory containing motion .npy files
+  text_dir: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/texts"                   # Directory containing text .txt files
+  negative_text_dir: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/neg_texts"      # Directory containing event text .json files
   min_motion_length: 40                                                             # Minimum number of frames in motion data, i.e., 2s
   max_motion_length: 200                                                            # Maximum number of frames in motion data, i.e., 10s
   max_shuffled_texts: 5                                                             # Maximum number of shuffled texts to use for training
@@ -18,11 +22,11 @@ train:
   shuffle: true                                                                     # Shuffle the training data
   num_workers: 4                                                                    # Number of subprocesses for data loading
   learning_rate: 1e-4                                                               # Learning rate for optimizer, 1e-4
-  num_epochs: 10                                                                   # Number of training epochs, 300
+  num_epochs: 100                                                                   # Number of training epochs, 300
 
 model:
   motion_encoder: "transformer"                                                     # Type of motion encoder to use
-  text_encoder: "clip"                                                              # Type of text encoder to use
+  text_encoder: "laclip"                                                            # Type of text encoder to use
   latent_dim: 512                                                                   # Dimension of the latent space
   num_transformer_layers: 4                                                         # Number of transformer layers in motion encoder
   num_mamba_layers: 2                                                               # Number of MAMBA layers in motion encoder
@@ -30,14 +34,14 @@ model:
   ff_size: 1024                                                                     # Feedforward size in motion encoder
   dropout: 0.1                                                                      # Dropout rate in motion encoder
   clip_model_name: "ViT-B/32"                                                       # CLIP model variant to use
-  laclip_ckpt_path: "/tune/laclip/laion400m_laclip.pt"                              # Path to the LA-CLIP model
-  motionlaclip_ckpt_path: "/tune/laclip/motionlaclip.pt"                            # Path to the Motion-LA-CLIP model
+  laclip_ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/laion400m_laclip.pt"                              # Path to the LA-CLIP model
+  motionlaclip_ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/motionlaclip_dropout/BEST_dropout_coslr_FinetuneLaCLIP_DS_HumanML3D_LR_5e-05_WD_0.01_EP_16_y8ksv238/finetunelaclip_epoch_8.pth"                            # Path to the Motion-LA-CLIP model
   activation: "gelu"                                                                # Activation function in motion encoder
 
 loss:
   temperature: 0.07                                                                 # Temperature parameter for contrastive loss
-  margin: 0.2                                                                       # Margin parameter for contrastive loss
+  margin: 10                                                                        # Margin parameter for contrastive loss
 
 checkpoint:
-  save_path: "./checkpoints"                                                        # Directory to save model checkpoints
+  save_path: "/scratch/izar/jiaxu/ckpts/motion_encoder"                             # Directory to save model checkpoints
   save_every: 50                                                                    # Save checkpoint every 'save_every' epochs

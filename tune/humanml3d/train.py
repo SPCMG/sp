@@ -7,7 +7,7 @@ from dataset import HumanML3DDataset, collate_fn
 from model import ClipTextEncoder
 from loss import HumanML3DLoss
 from tokenizer import SimpleTokenizer
-from setup_wandb import setup_wandb_and_logging
+from logging import setup_wandb_and_logging
 import wandb
 import os
 import argparse
@@ -137,7 +137,7 @@ def main():
     config.train.scheduler_factor = args.scheduler_factor
 
     # Initialize wandb
-    run_name = setup_wandb_and_logging(config)
+    # run_name = setup_wandb_and_logging(config)
 
     # 2) Initialize tokenizer
     tokenizer = SimpleTokenizer()
