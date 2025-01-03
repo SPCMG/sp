@@ -7,7 +7,7 @@ from dataset import HumanML3DDataset, collate_fn
 from model import ClipTextEncoder
 from loss import HumanML3DLoss
 from tokenizer import SimpleTokenizer
-from logging import setup_wandb_and_logging
+from log_utils import setup_wandb_and_logging
 import wandb
 import os
 import argparse
@@ -16,57 +16,50 @@ def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
     model.train()
     total_loss = 0.0
 
-    # NEW: Now we have 5 items in the batch
-    for anchors, pos_sames, neg_sames, pos_others, neg_others in dataloader:
+    # NEW: Now we have 4 items in the batch
+    for pos_sames, neg_sames, pos_others, neg_others in dataloader:
         optimizer.zero_grad()
         batch_loss = 0.0
 
-        for i in range(len(anchors)):
-            # 1) Anchor
-            a_ids, a_mask = anchors[i]
-            a_ids = a_ids.unsqueeze(0).to(device)      # shape (1, seq_len)
-            a_mask = a_mask.unsqueeze(0).to(device)    # shape (1, seq_len)
-            anchor_emb = model(a_ids, a_mask)          # shape (1, emb_dim)
-
-            # 2) Positives (same motion)
+        for i in range(len(pos_sames)):
+            # 1) Positives (same motion)
             p_ids, p_masks = pos_sames[i]
             if len(p_ids) > 0:
                 p_ids = torch.stack(p_ids, dim=0).to(device)    # shape (P, seq_len)
                 p_masks = torch.stack(p_masks, dim=0).to(device)
                 pos_same_emb = model(p_ids, p_masks)            # shape (P, emb_dim)
             else:
-                pos_same_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+                pos_same_emb = torch.zeros((0, model.config.hidden_size)).to(device)
 
-            # 3) Negatives (same motion)
+            # 2) Negatives (same motion)
             ns_ids, ns_masks = neg_sames[i]
             if len(ns_ids) > 0:
                 ns_ids = torch.stack(ns_ids, dim=0).to(device) 
                 ns_masks = torch.stack(ns_masks, dim=0).to(device)
                 neg_same_emb = model(ns_ids, ns_masks)
             else:
-                neg_same_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+                neg_same_emb = torch.zeros((0, model.config.hidden_size)).to(device)
 
-            # 4) Positives (other motion)
+            # 3) Positives (other motion)
             po_ids, po_masks = pos_others[i]
             if len(po_ids) > 0:
                 po_ids = torch.stack(po_ids, dim=0).to(device)
                 po_masks = torch.stack(po_masks, dim=0).to(device)
                 pos_other_emb = model(po_ids, po_masks)
             else:
-                pos_other_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+                pos_other_emb = torch.zeros((0, model.config.hidden_size)).to(device)
 
-            # 5) Negatives (other motion)
+            # 4) Negatives (other motion)
             no_ids, no_masks = neg_others[i]
             if len(no_ids) > 0:
                 no_ids = torch.stack(no_ids, dim=0).to(device)
                 no_masks = torch.stack(no_masks, dim=0).to(device)
                 neg_other_emb = model(no_ids, no_masks)
             else:
-                neg_other_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+                neg_other_emb = torch.zeros((0, model.config.hidden_size)).to(device)
 
             # --- Pass all embeddings to your updated loss ---
             loss_val, partials = loss_fn(
-                anchor_emb,
                 pos_same_emb,
                 neg_same_emb,
                 pos_other_emb,
@@ -75,8 +68,8 @@ def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
             batch_loss += loss_val
 
         # Average over number of samples in this batch
-        if len(anchors) > 0:
-            batch_loss = batch_loss / len(anchors)
+        if len(pos_sames) > 0:
+            batch_loss = batch_loss / len(pos_sames)
 
         # Backprop
         batch_loss.backward()
@@ -90,56 +83,49 @@ def validate_one_epoch(model, loss_fn, dataloader, device):
     total_loss = 0.0
 
     with torch.no_grad():
-        # NEW: also 5 items in the batch
-        for anchors, pos_sames, neg_sames, pos_others, neg_others in dataloader:
+        # NEW: Now we have 4 items in the batch
+        for pos_sames, neg_sames, pos_others, neg_others in dataloader:
             batch_loss = 0.0
 
-            for i in range(len(anchors)):
-                # 1) Anchor
-                a_ids, a_mask = anchors[i]
-                a_ids = a_ids.unsqueeze(0).to(device)
-                a_mask = a_mask.unsqueeze(0).to(device)
-                anchor_emb = model(a_ids, a_mask)
-
-                # 2) Positives (same)
+            for i in range(len(pos_sames)):
+                # 1) Positives (same motion)
                 p_ids, p_masks = pos_sames[i]
                 if len(p_ids) > 0:
-                    p_ids = torch.stack(p_ids, dim=0).to(device)
+                    p_ids = torch.stack(p_ids, dim=0).to(device)    # shape (P, seq_len)
                     p_masks = torch.stack(p_masks, dim=0).to(device)
-                    pos_same_emb = model(p_ids, p_masks)
+                    pos_same_emb = model(p_ids, p_masks)            # shape (P, emb_dim)
                 else:
-                    pos_same_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+                    pos_same_emb = torch.zeros((0, model.config.hidden_size)).to(device)
 
-                # 3) Negatives (same)
+                # 2) Negatives (same motion)
                 ns_ids, ns_masks = neg_sames[i]
                 if len(ns_ids) > 0:
-                    ns_ids = torch.stack(ns_ids, dim=0).to(device)
+                    ns_ids = torch.stack(ns_ids, dim=0).to(device) 
                     ns_masks = torch.stack(ns_masks, dim=0).to(device)
                     neg_same_emb = model(ns_ids, ns_masks)
                 else:
-                    neg_same_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+                    neg_same_emb = torch.zeros((0, model.config.hidden_size)).to(device)
 
-                # 4) Positives (other)
+                # 3) Positives (other motion)
                 po_ids, po_masks = pos_others[i]
                 if len(po_ids) > 0:
                     po_ids = torch.stack(po_ids, dim=0).to(device)
                     po_masks = torch.stack(po_masks, dim=0).to(device)
                     pos_other_emb = model(po_ids, po_masks)
                 else:
-                    pos_other_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+                    pos_other_emb = torch.zeros((0, model.config.hidden_size)).to(device)
 
-                # 5) Negatives (other)
+                # 4) Negatives (other motion)
                 no_ids, no_masks = neg_others[i]
                 if len(no_ids) > 0:
                     no_ids = torch.stack(no_ids, dim=0).to(device)
                     no_masks = torch.stack(no_masks, dim=0).to(device)
                     neg_other_emb = model(no_ids, no_masks)
                 else:
-                    neg_other_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+                    neg_other_emb = torch.zeros((0, model.config.hidden_size)).to(device)
 
-                # Calculate validation loss
+                # --- Pass all embeddings to your updated loss ---
                 loss_val, partials = loss_fn(
-                    anchor_emb,
                     pos_same_emb,
                     neg_same_emb,
                     pos_other_emb,
@@ -147,8 +133,9 @@ def validate_one_epoch(model, loss_fn, dataloader, device):
                 )
                 batch_loss += loss_val
 
-            if len(anchors) > 0:
-                batch_loss = batch_loss / len(anchors)
+            # Average over number of samples in this batch
+            if len(pos_sames) > 0:
+                batch_loss = batch_loss / len(pos_sames)
 
             total_loss += batch_loss.item()
 
@@ -172,7 +159,7 @@ def main():
     config.train.scheduler_factor = args.scheduler_factor
 
     # Initialize wandb
-    # run_name = setup_wandb_and_logging(config)
+    run_name = setup_wandb_and_logging(config)
 
     # 2) Initialize tokenizer
     tokenizer = SimpleTokenizer()
@@ -181,11 +168,13 @@ def main():
     train_dataset = HumanML3DDataset(
         text_dir=config.data.text_dir,
         negative_text_dir=config.data.negative_text_dir,
+        motion_babel_json=config.data.motion_babel_json,
+        babel_caption_json=config.data.babel_caption_json,
         split_file=pjoin(config.data.data_root, "train.txt"),
         tokenizer=tokenizer,
         max_text_length=config.data.max_text_length,
         num_other_negatives=config.data.num_other_negatives,
-        max_text_length=config.data.max_text_length,
+        num_other_positives=config.data.num_other_positives,
         random_seed=config.data.random_seed
     )
 
@@ -193,11 +182,13 @@ def main():
     val_dataset = HumanML3DDataset(
         text_dir=config.data.text_dir,
         negative_text_dir=config.data.negative_text_dir,
+        motion_babel_json=config.data.motion_babel_json,
+        babel_caption_json=config.data.babel_caption_json,
         split_file=pjoin(config.data.data_root, "val.txt"),
         tokenizer=tokenizer,
         max_text_length=config.data.max_text_length,
         num_other_negatives=config.data.num_other_negatives,
-        max_text_length=config.data.max_text_length,
+        num_other_positives=config.data.num_other_positives,
         random_seed=config.data.random_seed
     )
 
@@ -230,6 +221,8 @@ def main():
     checkpoint_dir = os.path.join(config.checkpoint.save_path, run_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
+    # 8) Training Loop
+    best_val_loss = float("inf")
     for epoch in range(config.train.num_epochs):
         # Train
         train_loss = train_one_epoch(model, loss_fn, train_loader, optimizer, device)
@@ -250,15 +243,15 @@ def main():
         })
 
         # Save checkpoint
-        if epoch % config.checkpoint.save_every == 0:
-            os.makedirs(checkpoint_dir, exist_ok=True)  
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
             checkpoint_path = os.path.join(checkpoint_dir, f"finetunelaclip_epoch_{epoch}.pth")
             torch.save({
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
             }, checkpoint_path)
-            print(f"Saved checkpoint: {checkpoint_path}\n{'-'*50}")
+            print(f"  [*] Saved best model to {checkpoint_path}")
 
     wandb.finish()
 

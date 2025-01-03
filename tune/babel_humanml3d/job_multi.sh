@@ -1,7 +1,7 @@
 #!/bin/bash
 
-learning_rates=(5e-5)
-weight_decays=(0.01)
+learning_rates=(1e-6 5e-6 1e-5 5e-5)
+weight_decays=(0.01 0.05)
 
 for lr in "${learning_rates[@]}"; do
   for wd in "${weight_decays[@]}"; do

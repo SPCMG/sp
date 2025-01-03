@@ -7,7 +7,7 @@ from dataset import HumanML3DDataset, collate_fn
 from model import ClipTextEncoder
 from loss import HumanML3DLoss
 from tokenizer import SimpleTokenizer
-from logging import setup_wandb_and_logging
+from log_utils import setup_wandb_and_logging
 import wandb
 import os
 import argparse
@@ -191,6 +191,7 @@ def main():
     checkpoint_dir = os.path.join(config.checkpoint.save_path, run_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
+    # 8) Training Loop
     for epoch in range(config.train.num_epochs):
         # Train
         train_loss = train_one_epoch(model, loss_fn, train_loader, optimizer, device)
@@ -212,7 +213,6 @@ def main():
 
         # Save checkpoint
         if epoch % config.checkpoint.save_every == 0:
-            os.makedirs(checkpoint_dir, exist_ok=True)  
             checkpoint_path = os.path.join(checkpoint_dir, f"finetunelaclip_epoch_{epoch}.pth")
             torch.save({
                 "epoch": epoch,

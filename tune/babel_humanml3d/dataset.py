@@ -129,20 +129,16 @@ class HumanML3DDataset(Dataset):
     def __getitem__(self, idx):
         mid = self.samples[idx]
 
-        # 1) Anchor + positives_same_motion
-        all_lines = self._read_lines(self.motion_id_to_path[mid])
-        if not all_lines:
+        # 1) Positives from the same motion
+        positives_same_motion = self._read_lines(self.motion_id_to_path[mid])
+        if not positives_same_motion:
             # If there's no line at all, return dummy
             return {
-                'anchor_tokens': None,
                 'positives_same_motion': [],
                 'negatives_same_motion': [],
                 'positives_other_motion': [],
                 'negatives_other_motion': []
             }
-
-        anchor_text = random.choice(all_lines)
-        positives_same_motion = [l for l in all_lines if l != anchor_text]
 
         # 2) Negatives from the same motion (swapped actions)
         neg_same_path = self.motion_id_to_neg_path[mid]
@@ -158,14 +154,12 @@ class HumanML3DDataset(Dataset):
         )
 
         # --- Tokenize everything ---
-        anchor_tokens = self._tokenize_list([anchor_text])[0]  # single dict
         pos_same_tokens = self._tokenize_list(positives_same_motion)
         neg_same_tokens = self._tokenize_list(negatives_same_motion)
         pos_other_tokens = self._tokenize_list(positives_other_motion)
         neg_other_tokens = self._tokenize_list(negatives_other_motion)
 
         return {
-            'anchor_tokens': anchor_tokens,
             'positives_same_motion': pos_same_tokens,
             'negatives_same_motion': neg_same_tokens,
             'positives_other_motion': pos_other_tokens,
@@ -181,22 +175,12 @@ def collate_fn(batch):
       ([list_of_input_ids], [list_of_attention_masks]) 
     for each sample in the batch.
     """
-    anchors = []
     pos_sames = []
     neg_sames = []
     pos_others = []
     neg_others = []
 
     for item in batch:
-        if item['anchor_tokens'] is None:
-            # skip empty item
-            continue
-
-        # Anchor
-        a_ids = item['anchor_tokens']['input_ids'].squeeze(0)
-        a_mask = item['anchor_tokens']['attention_mask'].squeeze(0)
-        anchors.append((a_ids, a_mask))
-
         # Positives from same motion
         p_tokens = item['positives_same_motion']
         p_ids = [t['input_ids'].squeeze(0) for t in p_tokens]
@@ -221,4 +205,4 @@ def collate_fn(batch):
         no_masks = [t['attention_mask'].squeeze(0) for t in no_tokens]
         neg_others.append((no_ids, no_masks))
 
-    return anchors, pos_sames, neg_sames, pos_others, neg_others
+    return pos_sames, neg_sames, pos_others, neg_others

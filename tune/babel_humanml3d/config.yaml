@@ -8,7 +8,7 @@ data:
   num_other_negatives: 3                                                                          # How many captions from other BABEL label groups
   num_other_positives: 3                                                                          # How many captions from the same BABEL label group
   random_seed: 42
-
+  # sp-motionclip
 model:
   pretrained_name: "openai/clip-vit-base-patch32"                                                 # Which CLIP to load
   ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/laion400m_laclip.pt"                 # Which checkpoint to load
@@ -16,8 +16,10 @@ model:
 
 loss:
   margin: 0.2
-  alpha: 1.0
-  beta: 1.0
+  alpha1: 1.0
+  alpha2: 1.0
+  alpha3: 1.0
+  alpha4: 1.0
 
 train:
   batch_size: 32
@@ -29,5 +31,5 @@ train:
   scheduler_patience: 5
 
 checkpoint:
-  save_path: "/home/jiaxu/projects/sp-motionclip/tune/motionlaclip_dropout"
+  save_path: "/scratch/izar/jiaxu/ckpts/text_encoder"
   save_every: 1                                                                                   # Save checkpoint every 'save_every' epochs

@@ -66,12 +66,14 @@ class HumanML3DLoss(nn.Module):
 
     def forward(
         self,
-        anchor_emb,             # shape (1, D)
         pos_same_emb,           # shape (P, D)
         neg_same_emb,           # shape (N_s, D)
         pos_other_emb,          # shape (P2, D)
         neg_other_emb           # shape (N_o, D)
     ):
+        # Calculate the centroid of pos_same_emb as the anchor embedding
+        anchor_emb = pos_same_emb.mean(dim=0, keepdim=True)  # shape (1, D)
+
         # L1: anchor close to positives_same_motion
         L1 = push_loss(anchor_emb, pos_same_emb, margin=self.margin)
 

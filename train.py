@@ -8,7 +8,7 @@ from torch.nn.utils import rnn, clip_grad_norm_
 
 from data.dataset import MotionTripleDataset, collate_fn
 from models.model import MotionTextModel
-from utils.logging import setup_wandb_and_logging
+from utils.log_utils import setup_wandb_and_logging
 import wandb
 import argparse
 
