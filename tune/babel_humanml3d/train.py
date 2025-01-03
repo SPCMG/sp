@@ -16,27 +16,46 @@ def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
     model.train()
     total_loss = 0.0
 
-    for anchors, pos_sames, neg_others, neg_sames in dataloader:
+    # NEW: Now we have 5 items in the batch
+    for anchors, pos_sames, neg_sames, pos_others, neg_others in dataloader:
         optimizer.zero_grad()
         batch_loss = 0.0
 
         for i in range(len(anchors)):
+            # 1) Anchor
             a_ids, a_mask = anchors[i]
-            a_ids = a_ids.unsqueeze(0).to(device)
-            a_mask = a_mask.unsqueeze(0).to(device)
+            a_ids = a_ids.unsqueeze(0).to(device)      # shape (1, seq_len)
+            a_mask = a_mask.unsqueeze(0).to(device)    # shape (1, seq_len)
+            anchor_emb = model(a_ids, a_mask)          # shape (1, emb_dim)
 
-            anchor_emb = model(a_ids, a_mask)  # (1, dim)
-
-            # Pos same
+            # 2) Positives (same motion)
             p_ids, p_masks = pos_sames[i]
             if len(p_ids) > 0:
-                p_ids = torch.stack(p_ids, dim=0).to(device)
+                p_ids = torch.stack(p_ids, dim=0).to(device)    # shape (P, seq_len)
                 p_masks = torch.stack(p_masks, dim=0).to(device)
-                pos_emb = model(p_ids, p_masks)
+                pos_same_emb = model(p_ids, p_masks)            # shape (P, emb_dim)
             else:
-                pos_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+                pos_same_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
 
-            # Neg other
+            # 3) Negatives (same motion)
+            ns_ids, ns_masks = neg_sames[i]
+            if len(ns_ids) > 0:
+                ns_ids = torch.stack(ns_ids, dim=0).to(device) 
+                ns_masks = torch.stack(ns_masks, dim=0).to(device)
+                neg_same_emb = model(ns_ids, ns_masks)
+            else:
+                neg_same_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+
+            # 4) Positives (other motion)
+            po_ids, po_masks = pos_others[i]
+            if len(po_ids) > 0:
+                po_ids = torch.stack(po_ids, dim=0).to(device)
+                po_masks = torch.stack(po_masks, dim=0).to(device)
+                pos_other_emb = model(po_ids, po_masks)
+            else:
+                pos_other_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+
+            # 5) Negatives (other motion)
             no_ids, no_masks = neg_others[i]
             if len(no_ids) > 0:
                 no_ids = torch.stack(no_ids, dim=0).to(device)
@@ -45,21 +64,21 @@ def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
             else:
                 neg_other_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
 
-            # Neg same
-            ns_ids, ns_masks = neg_sames[i]
-            if len(ns_ids) > 0:
-                ns_ids = torch.stack(ns_ids, dim=0).to(device)
-                ns_masks = torch.stack(ns_masks, dim=0).to(device)
-                neg_same_emb = model(ns_ids, ns_masks)
-            else:
-                neg_same_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
-
-            loss_val, _ = loss_fn(anchor_emb, pos_emb, neg_other_emb, neg_same_emb)
+            # --- Pass all embeddings to your updated loss ---
+            loss_val, partials = loss_fn(
+                anchor_emb,
+                pos_same_emb,
+                neg_same_emb,
+                pos_other_emb,
+                neg_other_emb
+            )
             batch_loss += loss_val
 
+        # Average over number of samples in this batch
         if len(anchors) > 0:
             batch_loss = batch_loss / len(anchors)
 
+        # Backprop
         batch_loss.backward()
         optimizer.step()
         total_loss += batch_loss.item()
@@ -67,40 +86,31 @@ def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
     return total_loss / len(dataloader)
 
 def validate_one_epoch(model, loss_fn, dataloader, device):
-    """
-    Runs a forward pass on the validation set, computes average val loss.
-    No gradients or optimizer steps here.
-    """
     model.eval()
     total_loss = 0.0
 
     with torch.no_grad():
-        for anchors, pos_sames, neg_others, neg_sames in dataloader:
+        # NEW: also 5 items in the batch
+        for anchors, pos_sames, neg_sames, pos_others, neg_others in dataloader:
             batch_loss = 0.0
 
             for i in range(len(anchors)):
+                # 1) Anchor
                 a_ids, a_mask = anchors[i]
                 a_ids = a_ids.unsqueeze(0).to(device)
                 a_mask = a_mask.unsqueeze(0).to(device)
-
                 anchor_emb = model(a_ids, a_mask)
 
+                # 2) Positives (same)
                 p_ids, p_masks = pos_sames[i]
                 if len(p_ids) > 0:
                     p_ids = torch.stack(p_ids, dim=0).to(device)
                     p_masks = torch.stack(p_masks, dim=0).to(device)
-                    pos_emb = model(p_ids, p_masks)
+                    pos_same_emb = model(p_ids, p_masks)
                 else:
-                    pos_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+                    pos_same_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
 
-                no_ids, no_masks = neg_others[i]
-                if len(no_ids) > 0:
-                    no_ids = torch.stack(no_ids, dim=0).to(device)
-                    no_masks = torch.stack(no_masks, dim=0).to(device)
-                    neg_other_emb = model(no_ids, no_masks)
-                else:
-                    neg_other_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
-
+                # 3) Negatives (same)
                 ns_ids, ns_masks = neg_sames[i]
                 if len(ns_ids) > 0:
                     ns_ids = torch.stack(ns_ids, dim=0).to(device)
@@ -109,7 +119,32 @@ def validate_one_epoch(model, loss_fn, dataloader, device):
                 else:
                     neg_same_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
 
-                loss_val, _ = loss_fn(anchor_emb, pos_emb, neg_other_emb, neg_same_emb)
+                # 4) Positives (other)
+                po_ids, po_masks = pos_others[i]
+                if len(po_ids) > 0:
+                    po_ids = torch.stack(po_ids, dim=0).to(device)
+                    po_masks = torch.stack(po_masks, dim=0).to(device)
+                    pos_other_emb = model(po_ids, po_masks)
+                else:
+                    pos_other_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+
+                # 5) Negatives (other)
+                no_ids, no_masks = neg_others[i]
+                if len(no_ids) > 0:
+                    no_ids = torch.stack(no_ids, dim=0).to(device)
+                    no_masks = torch.stack(no_masks, dim=0).to(device)
+                    neg_other_emb = model(no_ids, no_masks)
+                else:
+                    neg_other_emb = torch.zeros((0, anchor_emb.shape[-1])).to(device)
+
+                # Calculate validation loss
+                loss_val, partials = loss_fn(
+                    anchor_emb,
+                    pos_same_emb,
+                    neg_same_emb,
+                    pos_other_emb,
+                    neg_other_emb
+                )
                 batch_loss += loss_val
 
             if len(anchors) > 0:
@@ -148,7 +183,7 @@ def main():
         negative_text_dir=config.data.negative_text_dir,
         split_file=pjoin(config.data.data_root, "train.txt"),
         tokenizer=tokenizer,
-        max_length=config.data.max_length,
+        max_text_length=config.data.max_text_length,
         num_other_negatives=config.data.num_other_negatives,
         max_text_length=config.data.max_text_length,
         random_seed=config.data.random_seed
@@ -160,7 +195,7 @@ def main():
         negative_text_dir=config.data.negative_text_dir,
         split_file=pjoin(config.data.data_root, "val.txt"),
         tokenizer=tokenizer,
-        max_length=config.data.max_length,
+        max_text_length=config.data.max_text_length,
         num_other_negatives=config.data.num_other_negatives,
         max_text_length=config.data.max_text_length,
         random_seed=config.data.random_seed
@@ -186,7 +221,7 @@ def main():
 
     # 6) Model, Loss, Optim
     model = ClipTextEncoder(config.model.pretrained_name, config.model.ckpt_path, config.model.dropout).to(device)
-    loss_fn = HumanML3DLoss(config.loss.margin, config.loss.alpha, config.loss.beta)
+    loss_fn = loss_fn = HumanML3DLoss(margin=config.loss.margin, alpha1=config.loss.alpha1, alpha2=config.loss.alpha2, alpha3=config.loss.alpha3, alpha4=config.loss.alpha4)
     optimizer = AdamW(model.parameters(), lr=config.train.learning_rate, weight_decay=config.train.weight_decay)
     # scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=config.train.scheduler_factor, patience=config.train.scheduler_patience, verbose=True)
     scheduler = lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=8, T_mult=1, eta_min=1e-7, last_epoch=-1)

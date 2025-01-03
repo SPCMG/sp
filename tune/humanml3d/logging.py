@@ -6,12 +6,6 @@ def setup_wandb_and_logging(cfg):
     """
     Initializes a Weights & Biases run, logs hyperparameters,
     and returns the run name (which we'll also use for checkpoint directory).
-    
-    Args:
-        cfg: The OmegaConf config or dict with your hyperparams.
-    
-    Returns:
-        run_name (str): A unique, descriptive name for this run.
     """
     # 1) Generate a descriptive run name
     #    E.g., include date/time, or major hyperparams

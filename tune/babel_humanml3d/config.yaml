@@ -2,8 +2,11 @@ data:
   data_root: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D"                                      # Root directory for data
   text_dir: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/texts"                                 # Directory with positive (real) text .txt files
   negative_text_dir: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/neg_texts"                    # Directory with negative-swapped .txt files
-  max_length: 60                                                                                  # Max token length for CLIP
-  num_other_negatives: 3                                                                          # How many lines to sample from other motions
+  motion_babel_json: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/motion_babel.json"            # Path to motion-babel json file
+  babel_caption_json: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/babel_caption.json"          # Path to babel-caption json file
+  max_text_length: 60                                                                             # Max token length for CLIP
+  num_other_negatives: 3                                                                          # How many captions from other BABEL label groups
+  num_other_positives: 3                                                                          # How many captions from the same BABEL label group
   random_seed: 42
 
 model:

@@ -8,27 +8,31 @@ class HumanML3DDataset(Dataset):
         self,
         text_dir,
         negative_text_dir,
+        motion_babel_json,
+        babel_caption_json,
         split_file,         
         tokenizer,
-        max_length=77,
+        max_text_length=77,
         num_other_negatives=3,
+        num_other_positives=3,
         random_seed=42,
-        motion_babel_json="motion_babel.json",
-        babel_caption_json="babel_caption.json"
     ):
         super().__init__()
         random.seed(random_seed)
 
         self.text_dir = text_dir
         self.negative_text_dir = negative_text_dir
+        self.motion_babel_json = motion_babel_json
+        self.babel_caption_json = babel_caption_json    
         self.tokenizer = tokenizer
-        self.max_length = max_length
+        self.max_text_length = max_text_length
         self.num_other_negatives = num_other_negatives
+        self.num_other_positives = num_other_positives
 
         # --- Load motion->BABEL-labels and label->captions ---
-        with open(motion_babel_json, 'r') as f:
+        with open(self.motion_babel_json, 'r') as f:
             self.motion_babel = json.load(f)  # e.g. { "000001": ["walk", "run"], ... }
-        with open(babel_caption_json, 'r') as f:
+        with open(self.babel_caption_json, 'r') as f:
             self.babel_caption = json.load(f) # e.g. { "walk": ["a person walks", ...], "run": [...] }
 
         # Collect all possible BABEL labels
@@ -82,7 +86,7 @@ class HumanML3DDataset(Dataset):
         """
         out = []
         for text in captions:
-            tokens = self.tokenizer(text, context_length=self.max_length)
+            tokens = self.tokenizer(text, context_length=self.max_text_length)
             mask = (tokens != 0).long()
             out.append({'input_ids': tokens, 'attention_mask': mask})
         return out
@@ -144,13 +148,13 @@ class HumanML3DDataset(Dataset):
         neg_same_path = self.motion_id_to_neg_path[mid]
         negatives_same_motion = self._read_lines(neg_same_path) if neg_same_path else []
 
-        # 3) Negatives from other motion (new logic)
-        negatives_other_motion = self._build_negatives_other_motion(mid, k=3)
+        # 3) Negatives from other motion 
+        negatives_other_motion = self._build_negatives_other_motion(mid, self.num_other_negatives)
 
-        # 4) Positives from other motion (new logic)
+        # 4) Positives from other motion 
         #    - exclude 'positives_same_motion' so we don't sample duplicates
         positives_other_motion = self._build_positives_other_motion(
-            mid, k=3, exclude_texts=positives_same_motion
+            mid, self.num_other_positives, exclude_texts=positives_same_motion
         )
 
         # --- Tokenize everything ---

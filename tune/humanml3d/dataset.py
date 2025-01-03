@@ -146,7 +146,6 @@ def collate_fn(batch):
 
     for item in batch:
         if (item['anchor_tokens'] is None):
-            # skip empty item
             continue
 
         a_ids = item['anchor_tokens']['input_ids'].squeeze(0)

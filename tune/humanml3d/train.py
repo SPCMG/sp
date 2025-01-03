@@ -67,10 +67,6 @@ def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
     return total_loss / len(dataloader)
 
 def validate_one_epoch(model, loss_fn, dataloader, device):
-    """
-    Runs a forward pass on the validation set, computes average val loss.
-    No gradients or optimizer steps here.
-    """
     model.eval()
     total_loss = 0.0
 
@@ -137,7 +133,7 @@ def main():
     config.train.scheduler_factor = args.scheduler_factor
 
     # Initialize wandb
-    # run_name = setup_wandb_and_logging(config)
+    run_name = setup_wandb_and_logging(config)
 
     # 2) Initialize tokenizer
     tokenizer = SimpleTokenizer()
