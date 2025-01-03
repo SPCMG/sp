@@ -22,7 +22,11 @@ train:
   shuffle: true                                                                     # Shuffle the training data
   num_workers: 4                                                                    # Number of subprocesses for data loading
   learning_rate: 5e-5                                                               # Learning rate for optimizer, 1e-4
+  weight_decay: 1e-4                                                                # Weight decay for optimizer, 1e-2
   num_epochs: 100                                                                   # Number of training epochs, 300
+  scheduler_factor: 0.5                                                             # Factor by which to reduce the learning rate
+  scheduler_patience: 3                                                             # Number of epochs with no improvement after which learning rate will be reduced
+  scheduler_min_lr: 1e-8                                                            # Minimum learning rate for the scheduler
 
 model:
   motion_encoder: "transformer"                                                     # Type of motion encoder to use

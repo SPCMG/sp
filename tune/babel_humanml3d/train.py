@@ -29,7 +29,7 @@ def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
                 p_masks = torch.stack(p_masks, dim=0).to(device)
                 pos_same_emb = model(p_ids, p_masks)            # shape (P, emb_dim)
             else:
-                pos_same_emb = torch.zeros((0, model.config.hidden_size)).to(device)
+                pos_same_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
 
             # 2) Negatives (same motion)
             ns_ids, ns_masks = neg_sames[i]
@@ -38,7 +38,7 @@ def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
                 ns_masks = torch.stack(ns_masks, dim=0).to(device)
                 neg_same_emb = model(ns_ids, ns_masks)
             else:
-                neg_same_emb = torch.zeros((0, model.config.hidden_size)).to(device)
+                neg_same_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
 
             # 3) Positives (other motion)
             po_ids, po_masks = pos_others[i]
@@ -47,7 +47,7 @@ def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
                 po_masks = torch.stack(po_masks, dim=0).to(device)
                 pos_other_emb = model(po_ids, po_masks)
             else:
-                pos_other_emb = torch.zeros((0, model.config.hidden_size)).to(device)
+                pos_other_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
 
             # 4) Negatives (other motion)
             no_ids, no_masks = neg_others[i]
@@ -56,7 +56,7 @@ def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
                 no_masks = torch.stack(no_masks, dim=0).to(device)
                 neg_other_emb = model(no_ids, no_masks)
             else:
-                neg_other_emb = torch.zeros((0, model.config.hidden_size)).to(device)
+                neg_other_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
 
             # --- Pass all embeddings to your updated loss ---
             loss_val, partials = loss_fn(
@@ -95,7 +95,7 @@ def validate_one_epoch(model, loss_fn, dataloader, device):
                     p_masks = torch.stack(p_masks, dim=0).to(device)
                     pos_same_emb = model(p_ids, p_masks)            # shape (P, emb_dim)
                 else:
-                    pos_same_emb = torch.zeros((0, model.config.hidden_size)).to(device)
+                    pos_same_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
 
                 # 2) Negatives (same motion)
                 ns_ids, ns_masks = neg_sames[i]
@@ -104,7 +104,7 @@ def validate_one_epoch(model, loss_fn, dataloader, device):
                     ns_masks = torch.stack(ns_masks, dim=0).to(device)
                     neg_same_emb = model(ns_ids, ns_masks)
                 else:
-                    neg_same_emb = torch.zeros((0, model.config.hidden_size)).to(device)
+                    neg_same_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
 
                 # 3) Positives (other motion)
                 po_ids, po_masks = pos_others[i]
@@ -113,7 +113,7 @@ def validate_one_epoch(model, loss_fn, dataloader, device):
                     po_masks = torch.stack(po_masks, dim=0).to(device)
                     pos_other_emb = model(po_ids, po_masks)
                 else:
-                    pos_other_emb = torch.zeros((0, model.config.hidden_size)).to(device)
+                    pos_other_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
 
                 # 4) Negatives (other motion)
                 no_ids, no_masks = neg_others[i]
@@ -122,7 +122,7 @@ def validate_one_epoch(model, loss_fn, dataloader, device):
                     no_masks = torch.stack(no_masks, dim=0).to(device)
                     neg_other_emb = model(no_ids, no_masks)
                 else:
-                    neg_other_emb = torch.zeros((0, model.config.hidden_size)).to(device)
+                    neg_other_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
 
                 # --- Pass all embeddings to your updated loss ---
                 loss_val, partials = loss_fn(

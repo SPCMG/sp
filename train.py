@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from omegaconf import OmegaConf
 import torch.nn.functional as F
 from torch.nn.utils import rnn, clip_grad_norm_
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from data.dataset import MotionTripleDataset, collate_fn
 from models.model import MotionTextModel
@@ -179,8 +180,9 @@ def main():
     # 5) Initialize Model
     model = MotionTextModel(config).to(device)
 
-    # 6) Optimizer
-    optimizer = optim.AdamW(model.motion_encoder.parameters(), lr=config.train.learning_rate)
+    # 6) Optimizer and lr scheduler
+    optimizer = optim.AdamW(model.motion_encoder.parameters(), lr=config.train.learning_rate, weight_decay=config.train.weight_decay)
+    scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=config.train.scheduler_factor, patience=config.train.scheduler_patience, min_lr=config.train.scheduler_min_lr, verbose=True)
 
     # 7) Create a run-specific checkpoint directory
     checkpoint_dir = os.path.join(config.checkpoint.save_path, run_name)
@@ -203,7 +205,11 @@ def main():
             "Epoch": epoch,
             "Train Loss": train_loss,
             "Validation Loss": val_loss,
+            "Learning Rate": optimizer.param_groups[0]["lr"]
         })
+
+        # Update the scheduler based on the validation loss
+        scheduler.step(val_loss)
 
         # Save best model
         if val_loss < best_val_loss:
