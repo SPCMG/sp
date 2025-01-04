@@ -18,7 +18,7 @@ data:
   random_seed: 42                                                                   # Random seed for reproducibility
 
 train:
-  batch_size: 32                                                                     # Batch size for training
+  batch_size: 32                                                                    # Batch size for training
   shuffle: true                                                                     # Shuffle the training data
   num_workers: 4                                                                    # Number of subprocesses for data loading
   learning_rate: 5e-5                                                               # Learning rate for optimizer, 1e-4
@@ -39,13 +39,17 @@ model:
   dropout: 0.1                                                                      # Dropout rate in motion encoder
   clip_model_name: "ViT-B/32"                                                       # CLIP model variant to use
   laclip_ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/laion400m_laclip.pt"                              # Path to the LA-CLIP model
-  motionlaclip_ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/motionlaclip_dropout/BEST_dropout_coslr_FinetuneLaCLIP_DS_HumanML3D_LR_5e-05_WD_0.01_EP_16_y8ksv238/finetunelaclip_epoch_8.pth"                            # Path to the Motion-LA-CLIP model
+  motionlaclip_ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/motionlaclip/BEST_dropout_coslr_FinetuneLaCLIP_DS_HumanML3D_LR_5e-05_WD_0.01_EP_16_y8ksv238/finetunelaclip_epoch_8.pth"                            # Path to the Motion-LA-CLIP model
+  motionlaclipplus_ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/motionlaclipplus/FinetuneLaCLIP_Centroids_DS_BABEL&HumanML3D_LR_5e-05_WD_0.05_EP_16_ey24jqsx/finetunelaclip_epoch_13.pth"
   activation: "gelu"                                                                # Activation function in motion encoder
 
 loss:
   temperature: 0.07                                                                 # Temperature parameter for contrastive loss
-  margin: 2                                                                        # Margin parameter for contrastive loss
+  margin: 2                                                                         # Margin parameter for contrastive loss
 
 checkpoint:
   save_path: "/scratch/izar/jiaxu/ckpts/motion_encoder"                             # Directory to save model checkpoints
   save_every: 50                                                                    # Save checkpoint every 'save_every' epochs
+
+test:
+  ckpt: 

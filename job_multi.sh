@@ -1,9 +1,10 @@
 #!/bin/bash
 
 # Define parameters
-learning_rates=(5e-5)
-text_encoders=("clip" "laclip" "motionlaclip")
-motion_encoders=("transformer" "mamba")
+learning_rates=(1e-4)
+# text_encoders=("clip" "laclip" "motionlaclip")
+text_encoders=("motionlaclipplus")
+motion_encoders=("mamba")
 # text_encoders=("clip")
 # motion_encoders=("transformer" "mamba")
 

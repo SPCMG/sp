@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from typing import List, Optional
+import clip
 
 def compute_similarity(embedding_a, embedding_b, metric="cosine"):
     """
@@ -24,8 +25,9 @@ def compute_avg_similarity(model, motion_emb, captions: List[str], device, metri
 
     similarities = []
     for caption in captions:
-        text_input = model.clip_model.tokenize([caption]).to(device)
-        text_emb = model.text_encoder.encode_text(text_input).float()
+        # Tokenize and encode text inputs
+        text_inputs = clip.tokenize(caption).to(device)
+        text_emb = model.text_encoder.encode_text(text_inputs).float()  
         text_emb = F.normalize(text_emb, p=2, dim=1)
         similarities.append(compute_similarity(motion_emb, text_emb.squeeze(), metric))
     

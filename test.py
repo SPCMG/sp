@@ -5,9 +5,9 @@ from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 from torch.nn.utils import rnn
 import torch.nn.functional as F
-from metrics import compute_car, compute_r_precision, process_batch, build_similarity_matrix
+from eval.metrics import compute_car, compute_r_precision, process_batch, build_similarity_matrix
 
-from data.dataset import MotionDataset, collate_fn
+from data.dataset import MotionTripleDataset, collate_fn
 from models.model import MotionTextModel
 
 
@@ -58,16 +58,22 @@ def evaluate_model(model, dataloader, device="cuda"):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str, required=True, help='Path to config file')
-    parser.add_argument('--checkpoint', type=str, required=True, help='Path to best model checkpoint')
-    args = parser.parse_args()
-
-    config = OmegaConf.load(args.config)
+    config = OmegaConf.load("configs/config.yaml")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--motion_encoder", type=str, default=config.model.motion_encoder, help="Type of motion encoder (e.g., transformer, mamba)")
+    parser.add_argument("--text_encoder", type=str, default=config.model.text_encoder, help="Type of text encoder (e.g., clip, laclip, motionlaclip, motionlaclip+)")
+    parser.add_argument('--ckpt', type=str, default=config.test.ckpt, help='Path to best model checkpoint')
+    args = parser.parse_args()
+
+    # Override config values with user inputs
+    config.model.motion_encoder = args.motion_encoder
+    config.model.text_encoder = args.text_encoder
+    config.test.ckpt = args.ckpt
+    
     # Load test dataset
-    test_dataset = MotionDataset(
+    test_dataset = MotionTripleDataset(
         motion_dir=config.data.motion_dir,
         text_dir=config.data.text_dir,
         negative_text_dir=config.data.negative_text_dir,
@@ -86,12 +92,13 @@ def main():
 
     # Load model
     model = MotionTextModel(config).to(device)
-    checkpoint = torch.load(args.checkpoint, map_location=device)
+    checkpoint = torch.load(config.test.ckpt, map_location=device)
     model.load_state_dict(checkpoint)
 
     # Evaluate model
     car_score, r_precision_scores = evaluate_model(model, test_loader, device)
 
+    print(f"For {config.model.text_encoder}-{config.model.motion_encoder} model:")
     print(f"CAR: {car_score:.4f}")
     for k, v in r_precision_scores.items():
         print(f"{k}: {v:.4f}")

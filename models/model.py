@@ -29,6 +29,11 @@ class MotionTextModel(nn.Module):
             checkpoint = torch.load(config.model.motionlaclip_ckpt_path, map_location=self.device)
             self.clip_model.load_state_dict(checkpoint, strict=False)
             self.text_encoder = self.clip_model
+        elif self.text_encoder_type == "motionlaclipplus":
+            # Load the MotionLaCLIP+ weights from the checkpoint
+            checkpoint = torch.load(config.model.motionlaclipplus_ckpt_path, map_location=self.device)
+            self.clip_model.load_state_dict(checkpoint, strict=False)
+            self.text_encoder = self.clip_model
         else:
             raise ValueError("Unsupported text encoder type")
        

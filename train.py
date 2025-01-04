@@ -124,7 +124,7 @@ def main():
     parser.add_argument("--motion_encoder", type=str, default=config.model.motion_encoder,
                         help="Type of motion encoder (e.g., transformer, mamba)")
     parser.add_argument("--text_encoder", type=str, default=config.model.text_encoder,
-                        help="Type of text encoder (e.g., clip, laclip, motionlaclip)")
+                        help="Type of text encoder (e.g., clip, laclip, motionlaclip, motionlaclipplus)")
     parser.add_argument("--learning_rate", type=float, default=config.train.learning_rate,
                         help="Learning rate for the optimizer")
     args = parser.parse_args()
