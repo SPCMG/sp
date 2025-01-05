@@ -2,8 +2,8 @@
 
 # List of triples (text_encoder, motion_encoder, checkpoint directory)
 model_combinations=(
-    # "motionlaclipplus mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclipplus_LR_5e-05_EP_100_10srqike"
-    # "motionlaclipplus transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_motionlaclipplus_LR_5e-05_EP_100_ujyb2pvs"
+    "motionlaclipplus mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclipplus_LR_5e-05_EP_100_10srqike"
+    "motionlaclipplus transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_motionlaclipplus_LR_5e-05_EP_100_ujyb2pvs"
     "motionlaclip mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclip_LR_5e-05_EP_100_ln120xcg"
     "motionlaclip transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_motionlaclip_LR_5e-05_EP_100_ietogvw7"
     "laclip mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_laclip_LR_5e-05_EP_100_t0v63n7d"
@@ -12,7 +12,7 @@ model_combinations=(
     "clip transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_clip_LR_5e-05_EP_100_exnzawg1"
 )
 
-output_dir="./test_logs"           # Output directory for logs
+output_dir="./test_logs_new"           # Output directory for logs
 mkdir -p "$output_dir"
 
 # Iterate over each model combination
@@ -56,7 +56,7 @@ for combo in "${model_combinations[@]}"; do
   # Submit the job
   sbatch <<EOT
 #!/bin/bash
-#SBATCH --nodes=1 --ntasks=4 --cpus-per-task=4 --mem=100G --gres=gpu:2
+#SBATCH --nodes=1 --ntasks=4 --cpus-per-task=4 --mem=100G --gres=gpu:1
 #SBATCH --time=72:00:00 --partition=gpu
 #SBATCH --output=${output_dir}/test_te${text_encoder}_me${motion_encoder}_ep${epoch}_%j.log
 #SBATCH --error=${output_dir}/test_te${text_encoder}_me${motion_encoder}_ep${epoch}_%j.err

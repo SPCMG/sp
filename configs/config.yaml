@@ -52,4 +52,7 @@ checkpoint:
   save_every: 50                                                                    # Save checkpoint every 'save_every' epochs
 
 test:
-  ckpt: 
+  ckpt: "/home/jiaxu/projects/sp-motionclip/tune/motion_encoder/BEST_dropout_coslr_FinetuneLaCLIP_DS_HumanML3D_LR_5e-05_WD_0.01_EP_16_y8ksv238/finetunelaclip_epoch_8.pth"  # Path to the model checkpoint
+  batch_size: 256                                                                   # Batch size for testing
+  num_workers: 4                                                                    # Number of subprocesses for data loading
+
