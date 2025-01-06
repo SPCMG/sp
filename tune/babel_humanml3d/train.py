@@ -248,7 +248,7 @@ def main():
             checkpoint_path = os.path.join(checkpoint_dir, f"finetunelaclip_epoch_{epoch}.pth")
             torch.save({
                 "epoch": epoch,
-                "model_state_dict": model.state_dict(),
+                "state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
             }, checkpoint_path)
             print(f"  [*] Saved best model to {checkpoint_path}")

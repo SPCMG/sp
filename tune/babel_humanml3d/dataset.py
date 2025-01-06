@@ -104,27 +104,41 @@ class HumanML3DDataset(Dataset):
         # Hard-code them into sentences
         return [f"a person {label}." for label in chosen_labels]
 
-    def _build_positives_other_motion(self, mid, k=3, exclude_texts=None):
+    def _build_positives_other_motion(self, mid, k=3):
         """
-        - Get BABEL labels belonging to 'mid'
+        - Get BABEL labels belonging to 'mid' 
         - Randomly pick up to k
-        - For each label, pick a random caption from self.babel_caption[label],
-          excluding those in 'exclude_texts'.
+        - Convert each label to a simple sentence: "a person <label>."
         """
-        if exclude_texts is None:
-            exclude_texts = []
         motion_labels = self.motion_babel.get(mid, [])
+        if not motion_labels:
+            return []
         random.shuffle(motion_labels)
-        chosen_labels = motion_labels[:k]  # up to 3
-        results = []
-        for label in chosen_labels:
-            cands = self.babel_caption.get(label, [])
-            # Exclude lines that are identical to the motion’s rephrases in 'exclude_texts'
-            cands = [cap for cap in cands if cap not in exclude_texts]
-            if len(cands) == 0:
-                continue
-            results.append(random.choice(cands))
-        return results
+        chosen_labels = motion_labels[:k]
+        # Hard-code them into sentences
+        return [f"a person {label}." for label in chosen_labels]
+        
+    # def _build_positives_other_motion(self, mid, k=3, exclude_texts=None):
+    #     """
+    #     - Get BABEL labels belonging to 'mid'
+    #     - Randomly pick up to k
+    #     - For each label, pick a random caption from self.babel_caption[label],
+    #       excluding those in 'exclude_texts'.
+    #     """
+    #     if exclude_texts is None:
+    #         exclude_texts = []
+    #     motion_labels = self.motion_babel.get(mid, [])
+    #     random.shuffle(motion_labels)
+    #     chosen_labels = motion_labels[:k]  # up to 3
+    #     results = []
+    #     for label in chosen_labels:
+    #         cands = self.babel_caption.get(label, [])
+    #         # Exclude lines that are identical to the motion’s rephrases in 'exclude_texts'
+    #         cands = [cap for cap in cands if cap not in exclude_texts]
+    #         if len(cands) == 0:
+    #             continue
+    #         results.append(random.choice(cands))
+    #     return results
 
     def __getitem__(self, idx):
         mid = self.samples[idx]
@@ -148,10 +162,7 @@ class HumanML3DDataset(Dataset):
         negatives_other_motion = self._build_negatives_other_motion(mid, self.num_other_negatives)
 
         # 4) Positives from other motion 
-        #    - exclude 'positives_same_motion' so we don't sample duplicates
-        positives_other_motion = self._build_positives_other_motion(
-            mid, self.num_other_positives, exclude_texts=positives_same_motion
-        )
+        positives_other_motion = self._build_positives_other_motion(mid, self.num_other_positives)
 
         # --- Tokenize everything ---
         pos_same_tokens = self._tokenize_list(positives_same_motion)
