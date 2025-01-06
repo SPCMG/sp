@@ -82,3 +82,23 @@ class MotionTextModel(nn.Module):
         # Compute the loss
         loss = self.loss(text_embeds, motion_embeds, labels)
         return loss
+
+    def encode_motion(self, motion_inputs):
+        """
+        Encodes motion inputs into motion embeddings.
+        """
+        with torch.no_grad():
+            motion_embeds = self.motion_encoder(motion_inputs)
+            motion_embeds = F.normalize(motion_embeds, p=2, dim=1)
+        return motion_embeds
+
+    def encode_text(self, text_inputs):
+        """
+        Encodes text inputs into text embeddings.
+        """
+        if isinstance(text_inputs, list) and isinstance(text_inputs[0], str):
+            text_inputs = clip.tokenize(text_inputs).to(self.device)
+        with torch.no_grad():
+            text_embeds = self.text_encoder.encode_text(text_inputs).float()
+            text_embeds = F.normalize(text_embeds, p=2, dim=1)
+        return text_embeds

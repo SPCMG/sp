@@ -2,17 +2,18 @@
 
 # List of triples (text_encoder, motion_encoder, checkpoint directory)
 model_combinations=(
-    "motionlaclipplus mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclipplus_LR_5e-05_EP_100_10srqike"
-    "motionlaclipplus transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_motionlaclipplus_LR_5e-05_EP_100_ujyb2pvs"
-    "motionlaclip mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclip_LR_5e-05_EP_100_ln120xcg"
-    "motionlaclip transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_motionlaclip_LR_5e-05_EP_100_ietogvw7"
-    "laclip mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_laclip_LR_5e-05_EP_100_t0v63n7d"
-    "laclip transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_laclip_LR_5e-05_EP_100_9nl7n4l6"
-    "clip mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_clip_LR_5e-05_EP_100_3xbidc8m"
-    "clip transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_clip_LR_5e-05_EP_100_exnzawg1"
+    # "motionlaclipplus mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclipplus_LR_5e-05_EP_100_10srqike"
+    # "motionlaclipplus transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_motionlaclipplus_LR_5e-05_EP_100_ujyb2pvs"
+    # "motionlaclip mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclip_LR_5e-05_EP_100_ln120xcg"
+    # "motionlaclip transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_motionlaclip_LR_5e-05_EP_100_ietogvw7"
+    # "laclip mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_laclip_LR_5e-05_EP_100_t0v63n7d"
+    # "laclip transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_laclip_LR_5e-05_EP_100_9nl7n4l6"
+    # "clip mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_clip_LR_5e-05_EP_100_3xbidc8m"
+    # "clip transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_clip_LR_5e-05_EP_100_exnzawg1"
+    "motionlaclipplus mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclipplus_LR_0.0001_EP_100_zra1govd"
 )
 
-output_dir="./test_logs_new"           # Output directory for logs
+output_dir="./test_logs_bs"           # Output directory for logs
 mkdir -p "$output_dir"
 
 # Iterate over each model combination
@@ -56,8 +57,8 @@ for combo in "${model_combinations[@]}"; do
   # Submit the job
   sbatch <<EOT
 #!/bin/bash
-#SBATCH --nodes=1 --ntasks=4 --cpus-per-task=4 --mem=100G --gres=gpu:1
-#SBATCH --time=72:00:00 --partition=gpu
+#SBATCH --ntasks=1 --cpus-per-task=4 --mem=40G --gres=gpu:2
+#SBATCH --time=24:00:00 --partition=gpu
 #SBATCH --output=${output_dir}/test_te${text_encoder}_me${motion_encoder}_ep${epoch}_%j.log
 #SBATCH --error=${output_dir}/test_te${text_encoder}_me${motion_encoder}_ep${epoch}_%j.err
 #SBATCH --mail-type=END,FAIL,DONE --mail-user=jianan.xu@epfl.ch
