@@ -32,13 +32,14 @@ def train_one_epoch(model, loss_fn, dataloader, optimizer, device):
                 pos_same_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
 
             # 2) Negatives (same motion)
-            ns_ids, ns_masks = neg_sames[i]
-            if len(ns_ids) > 0:
-                ns_ids = torch.stack(ns_ids, dim=0).to(device) 
-                ns_masks = torch.stack(ns_masks, dim=0).to(device)
-                neg_same_emb = model(ns_ids, ns_masks)
-            else:
-                neg_same_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
+            neg_same_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
+            # ns_ids, ns_masks = neg_sames[i]
+            # if len(ns_ids) > 0:
+            #     ns_ids = torch.stack(ns_ids, dim=0).to(device) 
+            #     ns_masks = torch.stack(ns_masks, dim=0).to(device)
+            #     neg_same_emb = model(ns_ids, ns_masks)
+            # else:
+            #     neg_same_emb = torch.zeros((0, model.clip_model.config.text_config.hidden_size)).to(device)
 
             # 3) Positives (other motion)
             po_ids, po_masks = pos_others[i]

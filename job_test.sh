@@ -3,14 +3,14 @@
 # List of triples (text_encoder, motion_encoder, checkpoint directory)
 model_combinations=(
     # "motionlaclipplus mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclipplus_LR_5e-05_EP_100_10srqike"
-    # "motionlaclipplus transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_motionlaclipplus_LR_5e-05_EP_100_ujyb2pvs"
+    "motionlaclipplus transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_motionlaclipplus_LR_5e-05_EP_100_ujby2pvs"
     # "motionlaclip mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclip_LR_5e-05_EP_100_ln120xcg"
     # "motionlaclip transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_motionlaclip_LR_5e-05_EP_100_ietogvw7"
     # "laclip mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_laclip_LR_5e-05_EP_100_t0v63n7d"
     # "laclip transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_laclip_LR_5e-05_EP_100_9nl7n4l6"
     # "clip mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_clip_LR_5e-05_EP_100_3xbidc8m"
     # "clip transformer /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_transformer_TE_clip_LR_5e-05_EP_100_exnzawg1"
-    "motionlaclipplus mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclipplus_LR_0.0001_EP_100_zra1govd"
+    # "motionlaclipplus mamba /scratch/izar/jiaxu/ckpts/motion_encoder/2ndtry_Aligner_ME_mamba_TE_motionlaclipplus_LR_0.0001_EP_100_zra1govd"
 )
 
 output_dir="./test_logs_bs"           # Output directory for logs
