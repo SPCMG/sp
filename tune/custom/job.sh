@@ -6,6 +6,7 @@
 #SBATCH --gres=gpu:2             # Use GPU if supported by the code
 #SBATCH --time=72:00:00          # Set the job to 1 hour max
 #SBATCH --partition=gpu          # h100, l40s
+#SBATCH --account=cs433
 #SBATCH --output=./logs/train_%j.log
 #SBATCH --error=./logs/train_%j.err
 #SBATCH --mail-type=END,FAIL,DONE

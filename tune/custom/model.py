@@ -1,47 +1,31 @@
 import torch
 import torch.nn as nn
-from transformers import CLIPModel, CLIPConfig
+from transformers import DistilBertModel
 
-class ClipTextEncoder(nn.Module):
-    def __init__(
-        self,
-        hf_pretrained_name="openai/clip-vit-base-patch32",
-        pretrained_ckpt_path=None,
-        dropout=0.1
-    ):
+class DistilBertEmbedder(nn.Module):
+    def __init__(self, pretrained_name="distilbert-base-uncased", dropout=0.1, use_mean_pooling=True):
         super().__init__()
-        # 1) Load base architecture
-        config = CLIPConfig.from_pretrained(hf_pretrained_name)
-        self.clip_model = CLIPModel(config)
+        self.bert = DistilBertModel.from_pretrained(pretrained_name)
+        hidden_size = self.bert.config.dim
 
-        # 2) Optionally load a custom .pt checkpoint
-        if pretrained_ckpt_path is not None:
-            state_dict = torch.load(pretrained_ckpt_path, map_location="cpu")
-            self.clip_model.load_state_dict(state_dict, strict=False)
-
-        # 3) Freeze the vision encoder if you only want to finetune text
-        for param in self.clip_model.vision_model.parameters():
-            param.requires_grad = False
-        for param in self.clip_model.visual_projection.parameters():
-            param.requires_grad = False
-
-        # 4) Add dropout
-        self.dropout = nn.Dropout(dropout)
+        self.projection = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(hidden_size, hidden_size)
+        )
+        self.use_mean_pooling = use_mean_pooling
 
     def forward(self, input_ids, attention_mask):
-        """
-        Returns text embeddings from the text encoder.
-        """
-        text_emb = self.clip_model.get_text_features(
-            input_ids=input_ids,
-            attention_mask=attention_mask
-        )
-        # Apply dropout
-        text_emb = self.dropout(text_emb)
-        return text_emb
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        last_hidden = outputs.last_hidden_state  
 
-    def encode_text(self, text):
-        # If you want to feed a dict of input_ids, attention_mask
-        output = self.clip_model.text_model(**text)
-        pooled_output = output[1]
-        return pooled_output
+        if self.use_mean_pooling:
+            mask = attention_mask.unsqueeze(-1).expand(last_hidden.size()).float()
+            summed = torch.sum(last_hidden * mask, dim=1)
+            counts = torch.clamp(mask.sum(dim=1), min=1e-9)
+            pooled = summed / counts
+            emb = self.projection(pooled)
+        else:
+            cls_emb = last_hidden[:, 0]
+            emb = self.projection(cls_emb)
+
+        return emb  

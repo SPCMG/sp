@@ -1,29 +1,21 @@
 data:
-  train_json: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/train_data.json"
-  val_json: "/home/jiaxu/projects/sp-mdm/dataset/HumanML3D/val_data.json"
-  max_text_length: 60
-  num_positives: 3
-  num_negatives: 3
+  json_path: "/home/jiaxu/projects/sp-motionclip/viz/eval.json"
+  max_length: 64
   random_seed: 42
 
 model:
-  pretrained_name: "openai/clip-vit-base-patch32"
-  ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/laion400m_laclip.pt"
+  pretrained_name: "distilbert-base-uncased"
   dropout: 0.1
-
-loss:
-  margin: 0.2
+  use_mean_pooling: true  
 
 train:
-  batch_size: 32
-  num_workers: 8
+  batch_size: 1
+  num_workers: 2
   learning_rate: 5e-5
   weight_decay: 0.01
-  num_epochs: 16
-  scheduler_factor: 0.5
-  scheduler_patience: 5
+  num_epochs: 5
+  margin: 3
+  num_negatives: 5   
 
 checkpoint:
-  save_path: "/scratch/izar/jiaxu/ckpts/text_encoder"
-  save_every: 1
-
+  save_path: "./checkpoints"
