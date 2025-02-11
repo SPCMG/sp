@@ -41,12 +41,6 @@ class AnchorDataset(Dataset):
         )
 
     def __getitem__(self, idx):
-        """
-        Returns:
-        - anchor: tokenized label name
-        - pos_batch: tokenized sentences from the label
-        - neg_batch: tokenized label names from three other labels
-        """
         label_name = self.labels[idx]
         pos_sents = self.data[label_name]
 
@@ -84,9 +78,6 @@ class AnchorDataset(Dataset):
 
 
 def anchor_collate_fn(batch):
-    """
-    Collates a batch of anchor-based training samples.
-    """
     anchors = []
     pos_batches = []
     neg_batches = []
