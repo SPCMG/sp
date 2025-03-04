@@ -19,40 +19,8 @@ from omegaconf import OmegaConf
 import torch
 import torch.nn.functional as F
 
-# def triplet_loss(anchor_emb, pos_embs, neg_embs, margin=0.3):
-#     """
-#     anchor_emb: [1, dim]     or [dim]      (the anchor)
-#     pos_embs:   [P, dim]     (multiple positives)
-#     neg_embs:   [N, dim]     (multiple negatives)
-#     margin:     float        margin for triplet loss
 
-#     We define the 'hardest negative' for each positive embedding 
-#     as the negative that is closest in Euclidean distance to that positive.
-#     """
-
-#     # anchor_emb = F.normalize(anchor_emb, p=2, dim=-1)  # L2 normalization
-#     # pos_embs = F.normalize(pos_embs, p=2, dim=-1)  
-#     # pos_sim = torch.matmul(anchor_emb, pos_embs.T)     # Compute cosine similarity
-#     # pos_loss = 1 - pos_sim.min()                       # Push embeddings closer
-#     # return pos_loss
-
-#     # anchor_emb = F.normalize(anchor_emb, p=2, dim=-1)
-#     # pos_embs = F.normalize(pos_embs, p=2, dim=-1)
-#     # pos_loss = torch.sum((anchor_emb - pos_embs) ** 2)
-
-#     # 1) Positive distance: anchor vs. pos_embs
-#     #    We'll keep the standard "push positives closer to anchor."
-#     anchor_emb = F.normalize(anchor_emb, p=2, dim=-1)  # L2 normalization
-#     pos_embs = F.normalize(pos_embs, p=2, dim=-1)  
-#     pos_sim = torch.matmul(anchor_emb, pos_embs.T)     # Compute cosine similarity
-#     pos_loss = 1 - pos_sim.min()                       # Push embeddings closer
-
-#     # 2) Negative selection: 
-
-#     # Final combined loss
-#     return pos_loss + neg_loss
-
-def triplet_loss(anchor_emb, pos_embs, neg_embs, margin=0.3):
+def triplet_loss(anchor_emb, pos_embs, neg_embs, orig_anchor_emb, margin=0.3):
     """
     anchor_emb: [1, dim]        (the anchor embedding)
     pos_embs:   [P, dim]        (multiple positive embeddings)
@@ -73,20 +41,22 @@ def triplet_loss(anchor_emb, pos_embs, neg_embs, margin=0.3):
     neg_embs   = F.normalize(neg_embs,   p=2, dim=-1)    # [N, dim]
 
     # 2) Compute similarities with anchor
-    #    shape: pos_sim -> [P], neg_sim -> [N]
     pos_sim = torch.matmul(anchor_emb, pos_embs.T).squeeze(0)  
     neg_sim = torch.matmul(anchor_emb, neg_embs.T).squeeze(0)
 
-    # 3) Convert similarity to distance = (1 - cosine_sim)
-    #    Hardest positive = the one that has the smallest cos sim => largest distance
+    # 3) Hardest positive = the one that has the smallest cos sim => largest distance
     #    => we take min(pos_sim) to find the "most distant" positive
     pos_loss = 1.0 - pos_sim.min()  # hardest positive distance
 
-    #    Hardest negative = the one that has the largest cos sim => smallest distance
+    # 4) Hardest negative = the one that has the largest cos sim => smallest distance
     #    => we take max(neg_sim) to find the "closest" negative
     neg_loss = margin + neg_sim.max()  # hardest negative distance
 
-    return 0.5 * pos_loss + 0.5 * neg_loss
+    # 5) Consistency loss: anchor_emb should be close to the original anchor embedding
+    consistency_loss = F.mse_loss(anchor_emb, orig_anchor_emb)
+
+    return 0.5 * pos_loss + 0.5 * consistency_loss
+    # return 0.5 * pos_loss + 0.5 * neg_loss + 0.5 * consistency_loss
 
 def main():
     # 1) Load config
@@ -136,12 +106,31 @@ def main():
 
     # 6) Optimizer & scheduler
     optimizer = AdamW(model.clip_model.text_model.parameters(), lr=config.train.learning_rate, weight_decay=config.train.weight_decay)
-    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=15, min_lr=1e-5, verbose=True)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-6, verbose=True)
     # scheduler = get_linear_schedule_with_warmup(
     #     optimizer, 
     #     num_warmup_steps=int(0.2 * len(train_loader) * config.train.num_epochs),  
     #     num_training_steps=len(train_loader) * config.train.num_epochs
     # )
+
+    # [ADDED] STEP A: Precompute original anchor embeddings
+    # -----------------------------------------------------
+    print("[*] Precomputing original anchor embeddings...")
+    model.eval()  # Turn off dropout, etc.
+
+    anchor_original_embs = {}
+    with torch.no_grad():
+        for i in range(len(train_dataset)):
+            item = train_dataset[i]
+            # anchor item from dataset has "id" = i, so:
+            anchor_id = item["anchor"]["id"]  # or just i
+            input_ids = item["anchor"]["input_ids"].unsqueeze(0).to(device)
+            attn_mask = item["anchor"]["attention_mask"].unsqueeze(0).to(device)
+            emb = model(input_ids, attn_mask)  # [1, dim]
+            anchor_original_embs[anchor_id] = emb.cpu()  # store on CPU
+
+    model.train()  # Re-enable training mode
+    # -----------------------------------------------------
     
     best_loss = float("inf")
 
@@ -157,6 +146,9 @@ def main():
                 anchor_data = batch_data["anchor"][i]
                 pos_data = batch_data["pos_batch"][i]
                 neg_data = batch_data["neg_batch"][i]
+
+                # [ADDED] retrieve anchor_id so we can do consistency
+                anchor_id = anchor_data["id"]
 
                 # Forward pass for anchor
                 anchor_emb = model(
@@ -178,10 +170,12 @@ def main():
                     neg_embs = torch.zeros_like(pos_embs)
 
                 # Compute triplet-style loss
+                orig_anchor_emb = anchor_original_embs[anchor_id].to(device)  # shape [1, dim]
                 batch_loss = triplet_loss(
                     anchor_emb, 
                     pos_embs, 
                     neg_embs, 
+                    orig_anchor_emb,
                     margin=config.train.margin
                 )
                 loss_per_batch.append(batch_loss)
@@ -192,7 +186,7 @@ def main():
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-            scheduler.step(epoch_loss)
+            scheduler.step(total_loss)
 
             epoch_loss += total_loss.item()
             wandb.log({"batch_loss": total_loss.item()})

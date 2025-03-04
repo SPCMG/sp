@@ -11,8 +11,8 @@ model:
 train:
   batch_size: 7
   num_workers: 2
-  learning_rate: 1e-4
-  weight_decay: 1e-3
+  learning_rate: 1e-5
+  weight_decay: 1e-5
   num_epochs: 150
   margin: 1
   num_negatives: 6
