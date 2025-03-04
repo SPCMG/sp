@@ -1,21 +1,21 @@
 data:
-  json_path: "/home/jiaxu/projects/sp-motionclip/viz/eval.json"
+  json_path: "/home/jiaxu/projects/sp-motionclip/dataset/custom/custom_2000_train_07.json"
   max_length: 60     
   random_seed: 42
 
 model:
   pretrained_name: "openai/clip-vit-base-patch32"
   pretrained_ckpt_path: "/home/jiaxu/projects/sp-motionclip/tune/laclip/laion400m_laclip.pt"
-  dropout: 0.1
+  dropout: 0
 
 train:
-  batch_size: 1
+  batch_size: 7
   num_workers: 2
-  learning_rate: 5e-5
-  weight_decay: 0.01
-  num_epochs: 5
-  margin: 3
-  num_negatives: 5
+  learning_rate: 1e-4
+  weight_decay: 1e-3
+  num_epochs: 150
+  margin: 1
+  num_negatives: 6
 
 checkpoint:
   save_path: "./checkpoints"

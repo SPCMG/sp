@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from transformers import (
     get_linear_schedule_with_warmup,
     CLIPTokenizer  
@@ -18,66 +19,89 @@ from omegaconf import OmegaConf
 import torch
 import torch.nn.functional as F
 
+# def triplet_loss(anchor_emb, pos_embs, neg_embs, margin=0.3):
+#     """
+#     anchor_emb: [1, dim]     or [dim]      (the anchor)
+#     pos_embs:   [P, dim]     (multiple positives)
+#     neg_embs:   [N, dim]     (multiple negatives)
+#     margin:     float        margin for triplet loss
+
+#     We define the 'hardest negative' for each positive embedding 
+#     as the negative that is closest in Euclidean distance to that positive.
+#     """
+
+#     # anchor_emb = F.normalize(anchor_emb, p=2, dim=-1)  # L2 normalization
+#     # pos_embs = F.normalize(pos_embs, p=2, dim=-1)  
+#     # pos_sim = torch.matmul(anchor_emb, pos_embs.T)     # Compute cosine similarity
+#     # pos_loss = 1 - pos_sim.min()                       # Push embeddings closer
+#     # return pos_loss
+
+#     # anchor_emb = F.normalize(anchor_emb, p=2, dim=-1)
+#     # pos_embs = F.normalize(pos_embs, p=2, dim=-1)
+#     # pos_loss = torch.sum((anchor_emb - pos_embs) ** 2)
+
+#     # 1) Positive distance: anchor vs. pos_embs
+#     #    We'll keep the standard "push positives closer to anchor."
+#     anchor_emb = F.normalize(anchor_emb, p=2, dim=-1)  # L2 normalization
+#     pos_embs = F.normalize(pos_embs, p=2, dim=-1)  
+#     pos_sim = torch.matmul(anchor_emb, pos_embs.T)     # Compute cosine similarity
+#     pos_loss = 1 - pos_sim.min()                       # Push embeddings closer
+
+#     # 2) Negative selection: 
+
+#     # Final combined loss
+#     return pos_loss + neg_loss
+
 def triplet_loss(anchor_emb, pos_embs, neg_embs, margin=0.3):
     """
-    anchor_emb: [1, dim]     or [dim]      (the anchor)
-    pos_embs:   [P, dim]     (multiple positives)
-    neg_embs:   [N, dim]     (multiple negatives)
-    margin:     float        margin for triplet loss
+    anchor_emb: [1, dim]        (the anchor embedding)
+    pos_embs:   [P, dim]        (multiple positive embeddings)
+    neg_embs:   [N, dim]        (multiple negative embeddings)
+    margin:     float           margin for triplet loss
 
-    We define the 'hardest negative' for each positive embedding 
-    as the negative that is closest in Euclidean distance to that positive.
+    We'll do a 'hardest-positive' and 'hardest-negative' approach:
+        - hardest positive = one that is farthest from the anchor
+        - hardest negative = one that is closest to the anchor
+
+    Using 1 - cos_sim as a distance measure:
+        dist(a, b) = 1 - (a·b).
     """
 
-    # 1) Positive distance: anchor vs. pos_embs
-    #    We'll keep the standard "push positives closer to anchor."
-    #    For example, you could do:
-    pos_sim = F.cosine_similarity(
-        anchor_emb.expand(pos_embs.size(0), -1),  # replicate anchor for each pos
-        pos_embs,
-        dim=1
-    )
-    pos_loss = (1 - pos_sim).sum()
+    # 1) Normalize so that dot-product is the cosine similarity
+    anchor_emb = F.normalize(anchor_emb, p=2, dim=-1)    # [1, dim]
+    pos_embs   = F.normalize(pos_embs,   p=2, dim=-1)    # [P, dim]
+    neg_embs   = F.normalize(neg_embs,   p=2, dim=-1)    # [N, dim]
 
-    # 2) Negative selection: for each positive, find the negative that is
-    #    closest in Euclidean distance. That is "hardest" from the perspective
-    #    of distinguishing that positive from the negative.
-    #    Torch provides 'torch.cdist' to compute pairwise distances:
-    #    pos_neg_dist matrix will have shape [P, N].
-    pos_neg_dist = torch.cdist(pos_embs, neg_embs, p=2)  # Euclidean distance
+    # 2) Compute similarities with anchor
+    #    shape: pos_sim -> [P], neg_sim -> [N]
+    pos_sim = torch.matmul(anchor_emb, pos_embs.T).squeeze(0)  
+    neg_sim = torch.matmul(anchor_emb, neg_embs.T).squeeze(0)
 
-    # 3) For each positive, pick the negative that is the closest in distance
-    hardest_triplet_losses = []
-    for p_idx in range(pos_embs.size(0)):
-        # Index of the negative that is closest to pos_embs[p_idx]
-        closest_neg_idx = pos_neg_dist[p_idx].argmin()
+    # 3) Convert similarity to distance = (1 - cosine_sim)
+    #    Hardest positive = the one that has the smallest cos sim => largest distance
+    #    => we take min(pos_sim) to find the "most distant" positive
+    pos_loss = 1.0 - pos_sim.min()  # hardest positive distance
 
-        # The "hardest" negative for this positive
-        hardest_neg = neg_embs[closest_neg_idx].unsqueeze(0)
-        hardest_pos = pos_embs[p_idx].unsqueeze(0)
+    #    Hardest negative = the one that has the largest cos sim => smallest distance
+    #    => we take max(neg_sim) to find the "closest" negative
+    neg_loss = margin + neg_sim.max()  # hardest negative distance
 
-        # 4) Triplet margin loss with anchor, that single pos, and the "hardest" neg
-        #    margin + dist(anchor, pos) - dist(anchor, neg)
-        #    We typically want anchor->pos < anchor->neg.
-        #    We do it once per positive, so we get a list of triplet losses.
-        t_loss = F.triplet_margin_loss(
-            anchor_emb,     # shape [1, dim]
-            hardest_pos,    # shape [1, dim]
-            hardest_neg,    # shape [1, dim]
-            margin=margin
-        )
-        hardest_triplet_losses.append(t_loss)
-
-    # 5) Mean over all positives
-    neg_loss = torch.stack(hardest_triplet_losses).sum()
-
-    # Final combined loss
-    return pos_loss + neg_loss
+    return 0.5 * pos_loss + 0.5 * neg_loss
 
 def main():
     # 1) Load config
     config = OmegaConf.load("config.yaml")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--weight_decay", type=float, default=config.train.weight_decay, help="Weight decay")
+    parser.add_argument("--learning_rate", type=float, default=config.train.learning_rate, help="Learning rate")
+    args = parser.parse_args()
+
+    # Update config with user-provided values
+    config.train.weight_decay = args.weight_decay
+    config.train.learning_rate = args.learning_rate
 
     # 2) Setup wandb logging
     run_name = setup_wandb_and_logging(config)
@@ -87,8 +111,8 @@ def main():
     # 3) Create dataset & dataloader
     train_dataset = AnchorDataset(
         json_path=config.data.json_path,
-        pretrained_name=config.model.pretrained_name,   # "openai/clip-vit-base-patch32"
-        max_length=config.data.max_length,              # e.g. 77 for CLIP
+        pretrained_name=config.model.pretrained_name,  
+        max_length=config.data.max_length,             
         random_seed=config.data.random_seed,
         num_negatives=config.train.num_negatives
     )
@@ -111,13 +135,14 @@ def main():
     tokenizer = CLIPTokenizer.from_pretrained(config.model.pretrained_name)
 
     # 6) Optimizer & scheduler
-    optimizer = AdamW(model.parameters(), lr=config.train.learning_rate, weight_decay=config.train.weight_decay)
-    scheduler = get_linear_schedule_with_warmup(
-        optimizer, 
-        num_warmup_steps=int(0.1 * len(train_loader) * config.train.num_epochs), 
-        num_training_steps=len(train_loader) * config.train.num_epochs
-    )
-
+    optimizer = AdamW(model.clip_model.text_model.parameters(), lr=config.train.learning_rate, weight_decay=config.train.weight_decay)
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=15, min_lr=1e-5, verbose=True)
+    # scheduler = get_linear_schedule_with_warmup(
+    #     optimizer, 
+    #     num_warmup_steps=int(0.2 * len(train_loader) * config.train.num_epochs),  
+    #     num_training_steps=len(train_loader) * config.train.num_epochs
+    # )
+    
     best_loss = float("inf")
 
     # 7) Training loop
@@ -145,9 +170,12 @@ def main():
                 pos_embs = model(pos_input_ids, pos_attn_mask)
 
                 # Forward pass for negatives
-                neg_input_ids = torch.stack([x["input_ids"] for x in neg_data]).to(device)
-                neg_attn_mask = torch.stack([x["attention_mask"] for x in neg_data]).to(device)
-                neg_embs = model(neg_input_ids, neg_attn_mask)
+                if len(neg_data) > 0:
+                    neg_input_ids = torch.stack([x["input_ids"] for x in neg_data]).to(device)
+                    neg_attn_mask = torch.stack([x["attention_mask"] for x in neg_data]).to(device)
+                    neg_embs = model(neg_input_ids, neg_attn_mask)
+                else:
+                    neg_embs = torch.zeros_like(pos_embs)
 
                 # Compute triplet-style loss
                 batch_loss = triplet_loss(
@@ -162,8 +190,9 @@ def main():
 
             optimizer.zero_grad()
             total_loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-            scheduler.step()
+            scheduler.step(epoch_loss)
 
             epoch_loss += total_loss.item()
             wandb.log({"batch_loss": total_loss.item()})

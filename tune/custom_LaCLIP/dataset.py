@@ -49,7 +49,8 @@ class AnchorDataset(Dataset):
         anchor = self._tokenize(label_name)
         anchor = {
             "input_ids": anchor["input_ids"].squeeze(0),
-            "attention_mask": anchor["attention_mask"].squeeze(0)
+            "attention_mask": anchor["attention_mask"].squeeze(0),
+            "id": idx
         }
 
         # Tokenize positives (sentences from the same label)
@@ -62,7 +63,12 @@ class AnchorDataset(Dataset):
             })
 
         # Choose 3 random different labels for negatives
-        negative_labels = random.sample([l for l in self.labels if l != label_name], self.num_negatives)
+        # Only sample negatives if num_negatives > 0
+        candidate_neg_labels = [l for l in self.labels if l != label_name]
+        if self.num_negatives > 0 and len(candidate_neg_labels) >= self.num_negatives:
+            negative_labels = random.sample(candidate_neg_labels, self.num_negatives)
+        else:
+            negative_labels = []
         neg_batch = []
         for neg_label in negative_labels:
             tokenized = self._tokenize(neg_label)

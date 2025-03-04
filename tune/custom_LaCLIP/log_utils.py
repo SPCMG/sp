@@ -10,11 +10,13 @@ def setup_wandb_and_logging(cfg):
     # 1) Generate a descriptive run name
     #    E.g., include date/time, or major hyperparams
     run_name = (
-        f"FinetuneLaCLIP_Centroids_"
-        f"DS_Custom_"
+        f"FinetuneLaCLIP_NoContrastive_CosSim_"
+        f"DS_CustomAll_"
         f"LR_{cfg.train.learning_rate}_"
         f"WD_{cfg.train.weight_decay}_"
         f"EP_{cfg.train.num_epochs}_"
+        f"MG_{cfg.train.margin}_"
+        f"NN_{cfg.train.num_negatives}_"
         f"{wandb.util.generate_id()}"  
     )
 

@@ -12,7 +12,6 @@
 #SBATCH --mail-type=END,FAIL,DONE
 #SBATCH --mail-user=jianan.xu@epfl.ch
 
-
 echo "fidis $HOSTNAME"
 
 # Initialize Conda
