@@ -178,4 +178,6 @@ test_logs_new_new/
 test_logs_new_new1/
 test_logs_bs/
 
-viz/
+viz/*.json
+viz/*.png
+viz/*.ipynb
