@@ -181,3 +181,4 @@ test_logs_bs/
 viz/*.json
 viz/*.png
 viz/*.ipynb
+viz/*.sh
